@@ -1,0 +1,35 @@
+[project]
+name = "svyazi"
+
+[[services]]
+name = "backend"
+source = "backend"
+
+[services.build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[services.deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+
+[[services.variables]]
+name = "DATABASE_URL"
+value = "${{Postgres.DATABASE_URL}}"
+
+[[services]]
+name = "frontend"
+source = "frontend"
+
+[services.build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[services.deploy]
+startCommand = "npm start"
+healthcheckPath = "/"
+
+[[services.variables]]
+name = "NEXT_PUBLIC_API_URL"
+value = "https://${{backend.RAILWAY_PUBLIC_DOMAIN}}"

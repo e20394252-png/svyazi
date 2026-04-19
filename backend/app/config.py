@@ -1,0 +1,17 @@
+from pydantic_settings import BaseSettings
+from typing import Optional
+
+
+class Settings(BaseSettings):
+    DATABASE_URL: str
+    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    OPENROUTER_API_KEY: str
+    OPENROUTER_MODEL: str = "openai/gpt-4.1-mini"
+    CORS_ORIGINS: str = "http://localhost:3000"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+
+    class Config:
+        env_file = ".env"
+
+
+settings = Settings()
