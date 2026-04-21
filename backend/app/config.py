@@ -3,9 +3,9 @@ from typing import Optional
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str
+    DATABASE_URL: Optional[str] = None
     SECRET_KEY: str = "dev-secret-key-change-in-production"
-    OPENROUTER_API_KEY: str
+    OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_MODEL: str = "openai/gpt-4.1-mini"
     CORS_ORIGINS: str = "http://localhost:3000"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
