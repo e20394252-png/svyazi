@@ -149,6 +149,7 @@ async def generate_embeddings(
 
     processed = 0
     failed = 0
+    first_errors = []
 
     for user in users:
         try:
@@ -176,11 +177,13 @@ async def generate_embeddings(
             profile.embedding = json.dumps(embedding)
             db.commit()
             processed += 1
-        except Exception:
+        except Exception as e:
             failed += 1
+            if len(first_errors) < 3:
+                first_errors.append(f"user_id={user.id}: {type(e).__name__}: {str(e)[:200]}")
             continue
 
-    return {"processed": processed, "failed": failed, "total": len(users)}
+    return {"processed": processed, "failed": failed, "total": len(users), "first_errors": first_errors}
 
 
 @router.get("/stats")
