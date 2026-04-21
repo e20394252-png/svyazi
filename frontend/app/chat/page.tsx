@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
@@ -49,9 +49,9 @@ export default function ChatListPage() {
           <div className="empty-state">
             <div className="icon">💬</div>
             <h3>Нет переписок</h3>
-            <p>Начните знакомство в разделе «Матчи»</p>
+            <p>Начните знакомство в разделе «Мэтчи»</p>
             <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => router.push('/dashboard')}>
-              Перейти к матчам
+              Перейти к мэтчам
             </button>
           </div>
         ) : (

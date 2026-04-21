@@ -134,6 +134,7 @@ async def generate_embeddings(
     """
     from app.ai_service import analyze_occupation, get_embedding, build_profile_text, extract_tags
     import json
+    import asyncio
 
     users = (
         db.query(User)
@@ -150,7 +151,7 @@ async def generate_embeddings(
     failed = 0
     first_errors = []
 
-    for user in users:
+    for i, user in enumerate(users):
         try:
             text = user.occupation or user.bio or ""
             if not text:
@@ -176,6 +177,12 @@ async def generate_embeddings(
             profile.embedding = json.dumps(embedding)
             db.commit()
             processed += 1
+
+            # Rate limit: Gemini free tier 15 RPM/key, 3 keys = 45 RPM
+            # 5 calls per user, so sleep 1s per user to stay under limit
+            if i % 10 == 9:
+                await asyncio.sleep(2)  # brief pause every 10 users
+
         except Exception as e:
             failed += 1
             if len(first_errors) < 3:

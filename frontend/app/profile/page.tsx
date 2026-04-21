@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
@@ -63,7 +63,7 @@ export default function ProfilePage() {
         has_items: p.has_items || f.has_items,
       }))
       setProfile(p)
-      showMessage('ИИ проанализировал ваш профиль и обновил матчинг', 'success')
+      showMessage('ИИ проанализировал ваш профиль и обновил мэтчинг', 'success')
     } catch (e: any) {
       showMessage(e.message, 'error')
     } finally {

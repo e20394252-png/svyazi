@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './page.module.css'
@@ -39,7 +39,7 @@ export default function LandingPage() {
         <div className={styles.heroContent}>
           <div className={styles.badge}>
             <span>✨</span>
-            <span>ИИ-матчинг для нетворкеров</span>
+            <span>ИИ-мэтчинг для нетворкеров</span>
           </div>
 
           <h1 className={styles.heroTitle}>
@@ -77,7 +77,7 @@ export default function LandingPage() {
             <div className={styles.statDivider} />
             <div className={styles.stat}>
               <span className={styles.statNum}>ИИ</span>
-              <span className={styles.statLabel}>матчинг</span>
+              <span className={styles.statLabel}>мэтчинг</span>
             </div>
             <div className={styles.statDivider} />
             <div className={styles.stat}>
@@ -126,7 +126,7 @@ export default function LandingPage() {
           {[
             { num: '1', icon: '📝', title: 'Заполни профиль', text: 'Расскажи о себе: что умеешь, что ищешь, чем располагаешь' },
             { num: '2', icon: '🤖', title: 'ИИ анализирует', text: 'Алгоритм находит смысловые совпадения с другими участниками' },
-            { num: '3', icon: '⚡', title: 'Получи матчи', text: 'Смотри топ совпадений с объяснением почему вам стоит познакомиться' },
+            { num: '3', icon: '⚡', title: 'Получи мэтчи', text: 'Смотри топ совпадений с объяснением почему вам стоит познакомиться' },
             { num: '4', icon: '🤝', title: 'Знакомься', text: 'Принимай запросы, пиши в Telegram и строй полезные связи' },
           ].map((s) => (
             <div key={s.num} className={styles.step}>
@@ -142,7 +142,7 @@ export default function LandingPage() {
       <footer className={styles.footer}>
         <span className="gradient-text" style={{ fontWeight: 700 }}>Связи</span>
         <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-          Нетворкинг + ИИ матчинг © 2024
+          Нетворкинг + ИИ мэтчинг © 2024
         </span>
       </footer>
     </div>

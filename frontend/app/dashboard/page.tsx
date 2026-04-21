@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
@@ -16,7 +16,7 @@ type MatchItem = {
 }
 
 const TABS = [
-  { key: 'top', label: 'Топ матчи', icon: '⚡' },
+  { key: 'top', label: 'Топ мэтчи', icon: '⚡' },
   { key: 'incoming', label: 'Входящие', icon: '📩' },
   { key: 'accepted', label: 'Мои связи', icon: '🤝' },
   { key: 'awaiting', label: 'Ожидают', icon: '⏳' },
@@ -112,7 +112,7 @@ export default function DashboardPage() {
               {finding ? (
                 <><span className="spinner" /><span>Ищем...</span></>
               ) : (
-                <><span>⚡</span><span>Найти матчи</span></>
+                <><span>⚡</span><span>Найти мэтчи</span></>
               )}
             </button>
           </div>
@@ -158,7 +158,7 @@ export default function DashboardPage() {
               {activeTab === 'top' ? '⚡' : activeTab === 'incoming' ? '📩' : activeTab === 'accepted' ? '🤝' : '⏳'}
             </div>
             <h3>
-              {activeTab === 'top' && 'Нажмите «Найти матчи»'}
+              {activeTab === 'top' && 'Нажмите «Найти мэтчи»'}
               {activeTab === 'incoming' && 'Пока нет входящих запросов'}
               {activeTab === 'accepted' && 'Вы ещё никого не добавили'}
               {activeTab === 'awaiting' && 'Нет ожидающих ответа'}
@@ -166,12 +166,12 @@ export default function DashboardPage() {
             <p>
               {activeTab === 'top' && 'ИИ найдёт людей, чьи цели пересекаются с вашими'}
               {activeTab === 'incoming' && 'Когда кто-то захочет с вами познакомиться — они появятся здесь'}
-              {activeTab === 'accepted' && 'Нажмите «Познакомиться» в топ-матчах'}
+              {activeTab === 'accepted' && 'Нажмите «Познакомиться» в топ-мэтчах'}
               {activeTab === 'awaiting' && 'Люди, которых вы добавили, но они ещё не ответили'}
             </p>
             {activeTab === 'top' && (
               <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={handleFindMatches} disabled={finding}>
-                {finding ? 'Ищем...' : '⚡ Найти матчи'}
+                {finding ? 'Ищем...' : '⚡ Найти мэтчи'}
               </button>
             )}
           </div>

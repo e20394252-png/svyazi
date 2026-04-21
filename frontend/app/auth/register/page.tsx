@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
@@ -81,7 +81,7 @@ export default function RegisterPage() {
             </label>
             <textarea
               className="input-field"
-              placeholder="Опишите свою деятельность, что предлагаете и что ищете. Чем подробнее, тем точнее матчинг."
+              placeholder="Опишите свою деятельность, что предлагаете и что ищете. Чем подробнее, тем точнее мэтчинг."
               value={form.occupation}
               onChange={set('occupation')}
               rows={3}

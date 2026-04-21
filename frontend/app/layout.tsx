@@ -1,10 +1,10 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Связи — Нетворкинг и матчинг',
-  description: 'Находите нужных людей по принципу Хочу/Могу/Имею. ИИ-матчинг для деловых знакомств.',
-  keywords: 'нетворкинг, матчинг, деловые знакомства, связи, бизнес',
+  title: 'Связи — Нетворкинг и мэтчинг',
+  description: 'Находите нужных людей по принципу Хочу/Могу/Имею. ИИ-мэтчинг для деловых знакомств.',
+  keywords: 'нетворкинг, мэтчинг, деловые знакомства, связи, бизнес',
 }
 
 export default function RootLayout({
