@@ -9,20 +9,20 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Models to try in order via OpenRouter
+# Models to try in order via OpenRouter (validated names)
 OPENROUTER_MODELS = [
-    "openai/gpt-4.1-mini",
-    "google/gemini-flash-1.5-8b",
-    "google/gemini-2.0-flash-exp:free",
-    "mistralai/mistral-7b-instruct:free",
+    "openai/gpt-4o-mini",
+    "openai/gpt-3.5-turbo",
+    "anthropic/claude-3-haiku-20240307",
+    "google/gemini-1.5-flash",
 ]
 
-# Direct Gemini REST API model candidates
-GEMINI_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemini-pro",
+# Direct Gemini REST API — try both API versions and model variants
+GEMINI_MODEL_URLS = [
+    "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent",
+    "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-lite:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
 ]
 
 
@@ -63,8 +63,8 @@ async def _call_openrouter(prompt: str, system: str = "", max_tokens: int = 500,
 async def _call_gemini_direct(prompt: str, system: str = "", api_key: str = "", max_tokens: int = 500) -> str:
     full_prompt = f"{system}\n\n{prompt}" if system else prompt
 
-    for gemini_model in GEMINI_MODELS:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+    for url_template in GEMINI_MODEL_URLS:
+        url = f"{url_template}?key={api_key}"
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
@@ -78,9 +78,9 @@ async def _call_gemini_direct(prompt: str, system: str = "", api_key: str = "", 
                     data = response.json()
                     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
                 else:
-                    logger.warning(f"Gemini [{gemini_model}] {response.status_code}: {response.text[:200]}")
+                    logger.warning(f"Gemini [{url_template.split('/')[-1]}] {response.status_code}: {response.text[:200]}")
         except Exception as e:
-            logger.warning(f"Gemini [{gemini_model}] exception: {e}")
+            logger.warning(f"Gemini [{url_template.split('/')[-1]}] exception: {e}")
 
     raise Exception(f"All Gemini models failed for key ...{api_key[-6:]}")
 

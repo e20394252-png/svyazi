@@ -207,7 +207,7 @@ async def test_ai(
     """Diagnose which AI providers and models are functional"""
     import httpx
     from app.config import settings
-    from app.ai_service import OPENROUTER_URL, OPENROUTER_MODELS, GEMINI_MODELS
+    from app.ai_service import OPENROUTER_URL, OPENROUTER_MODELS, GEMINI_MODEL_URLS
 
     results = {}
 
@@ -236,12 +236,12 @@ async def test_ai(
     gemini_keys = [k.strip() for k in (settings.GEMINI_API_KEYS or "").split(",") if k.strip()]
     results["gemini_keys_count"] = len(gemini_keys)
     for i, key in enumerate(gemini_keys):
-        for model in GEMINI_MODELS[:2]:
-            label = f"gemini[key{i+1}]/{model}"
+        for url_tpl in GEMINI_MODEL_URLS[:2]:
+            label = f"gemini[key{i+1}]/{url_tpl.split('/')[-1]}"
             try:
                 async with httpx.AsyncClient(timeout=15) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+                        f"{url_tpl}?key={key}",
                         json={"contents": [{"parts": [{"text": "Say ok"}]}], "generationConfig": {"maxOutputTokens": 5}},
                     )
                     results[label] = f"{resp.status_code}: {resp.text[:100]}"
