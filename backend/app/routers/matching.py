@@ -46,6 +46,15 @@ def build_profile_text_local(profile: MatchProfile, user: User) -> str:
     return " ".join(parts)
 
 
+def clean_field(text) -> str:
+    """Return None if text is garbled (encoding issue from CSV import)"""
+    if not text:
+        return None
+    text = str(text)
+    q_ratio = text.count('?') / max(len(text), 1)
+    return None if q_ratio > 0.2 else text
+
+
 def get_profile_out(user: User) -> dict:
     profile = user.profile
     return {
@@ -54,8 +63,8 @@ def get_profile_out(user: User) -> dict:
         "email": user.email,
         "telegram": user.telegram,
         "phone": user.phone,
-        "occupation": user.occupation,
-        "bio": user.bio,
+        "occupation": clean_field(user.occupation),
+        "bio": clean_field(user.bio),
         "city": user.city,
         "wants": profile.wants if profile else None,
         "cans": profile.cans if profile else None,
