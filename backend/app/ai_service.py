@@ -9,20 +9,16 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Models to try in order via OpenRouter (validated names)
+# Models to try in order via OpenRouter (VALIDATED: gpt-4o-mini ✓, gpt-3.5-turbo ✓)
 OPENROUTER_MODELS = [
     "openai/gpt-4o-mini",
     "openai/gpt-3.5-turbo",
-    "anthropic/claude-3-haiku-20240307",
-    "google/gemini-1.5-flash",
 ]
 
-# Direct Gemini REST API — try both API versions and model variants
+# Direct Gemini API (VALIDATED: gemini-2.0-flash v1beta works, others 404)
 GEMINI_MODEL_URLS = [
-    "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent",
-    "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-lite:generateContent",
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
 ]
 
 
