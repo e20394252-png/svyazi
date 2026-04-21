@@ -11,8 +11,39 @@ from app.ai_service import (
 from typing import List
 import json
 import asyncio
+import re
+import math
+from collections import Counter
 
 router = APIRouter(prefix="/api/matches", tags=["matches"])
+
+
+def text_similarity(a: str, b: str) -> float:
+    """Russian keyword cosine similarity — pure Python, no external API"""
+    def tokenize(text: str) -> list:
+        return re.findall(r'[а-яёa-z0-9]+', (text or "").lower())
+
+    a_tokens = Counter(tokenize(a))
+    b_tokens = Counter(tokenize(b))
+    if not a_tokens or not b_tokens:
+        return 0.0
+    dot = sum(a_tokens[t] * b_tokens.get(t, 0) for t in a_tokens)
+    norm_a = math.sqrt(sum(v * v for v in a_tokens.values()))
+    norm_b = math.sqrt(sum(v * v for v in b_tokens.values()))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def build_profile_text_local(profile: MatchProfile, user: User) -> str:
+    parts = list(filter(None, [
+        profile.wants if profile else "",
+        profile.cans if profile else "",
+        profile.has_items if profile else "",
+        user.occupation or "",
+        user.bio or "",
+    ]))
+    return " ".join(parts)
 
 
 def get_profile_out(user: User) -> dict:
@@ -41,74 +72,79 @@ async def find_matches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Run AI matching for current user"""
+    """Run matching for current user (vector similarity or text fallback)"""
     profile = current_user.profile
 
-    # If no embedding, auto-analyze first
-    if not profile or not profile.embedding:
+    # ── Step 1: ensure profile exists ──────────────────────────────
+    if not profile:
+        profile = MatchProfile(user_id=current_user.id)
+        db.add(profile)
+        db.flush()
+
+    # ── Step 2: AI analysis (optional — proceed even if it fails) ──
+    if not profile.wants and not profile.cans:
         text = current_user.bio or current_user.occupation or ""
         if not text:
             raise HTTPException(
                 status_code=400,
-                detail="Заполните профиль: расскажите о себе, что умеете и что ищете"
+                detail="Заполните профиль: укажите чем занимаетесь и что ищете"
             )
-
-        if not profile:
-            profile = MatchProfile(user_id=current_user.id)
-            db.add(profile)
-
         try:
             parsed = await analyze_occupation(text)
             profile.wants = parsed["wants"]
             profile.cans = parsed["cans"]
             profile.has_items = parsed["has"]
-            profile.wants_tags = await extract_tags(parsed["wants"])
-            profile.cans_tags = await extract_tags(parsed["cans"])
-            profile.has_tags = await extract_tags(parsed["has"])
-
-            profile_text = await build_profile_text(parsed["wants"], parsed["cans"], parsed["has"], text)
-            embedding = await get_embedding(profile_text)
-            profile.embedding = json.dumps(embedding)
+            try:
+                profile.wants_tags = await extract_tags(parsed["wants"])
+                profile.cans_tags = await extract_tags(parsed["cans"])
+                profile.has_tags = await extract_tags(parsed["has"])
+            except Exception:
+                pass  # tags are optional
             db.commit()
             db.refresh(current_user)
             profile = current_user.profile
-        except Exception as ai_err:
+        except Exception:
             db.rollback()
-            raise HTTPException(
-                status_code=503,
-                detail="Сервис анализа временно перегружен. Попробуйте через 30 секунд."
-            )
+            # AI failed — do text matching on raw occupation text
+            profile.wants = ""
+            profile.cans = current_user.occupation or current_user.bio or ""
 
-    current_embedding = json.loads(profile.embedding)
-
-    # Get all other users with embeddings
+    # ── Step 3: get all candidate profiles ─────────────────────────
     all_profiles = (
         db.query(MatchProfile)
-        .filter(
-            MatchProfile.user_id != current_user.id,
-            MatchProfile.embedding.isnot(None),
-        )
+        .filter(MatchProfile.user_id != current_user.id)
         .options(joinedload(MatchProfile.user))
         .all()
     )
 
-    # Calculate similarities
+    # ── Step 4: calculate similarity (vector if possible, text fallback) ──
+    current_text = build_profile_text_local(profile, current_user)
+    use_vectors = bool(profile.embedding)
+
     candidates = []
     for p in all_profiles:
         if not p.user or not p.user.is_active:
             continue
-        try:
-            emb = json.loads(p.embedding)
-            sim = cosine_similarity(current_embedding, emb)
-            candidates.append((sim, p.user))
-        except Exception:
-            continue
+        # Try vector similarity first
+        if use_vectors and p.embedding:
+            try:
+                emb_a = json.loads(profile.embedding)
+                emb_b = json.loads(p.embedding)
+                sim = cosine_similarity(emb_a, emb_b)
+                candidates.append((sim, p.user))
+                continue
+            except Exception:
+                pass
+        # Fallback: pure text similarity
+        other_text = build_profile_text_local(p, p.user)
+        sim = text_similarity(current_text, other_text)
+        candidates.append((sim, p.user))
 
-    # Sort by similarity, take top 20
+    # ── Step 5: sort & take top 20 ─────────────────────────────────
     candidates.sort(key=lambda x: x[0], reverse=True)
     top_candidates = candidates[:20]
 
-    # Get existing matches to avoid duplicates
+    # ── Step 6: filter already matched ─────────────────────────────
     existing_match_ids = {
         m.user2_id
         for m in db.query(Match).filter(Match.user1_id == current_user.id).all()
@@ -120,10 +156,10 @@ async def find_matches(
             continue
 
         score = round(sim * 100, 1)
-        if score < 30:
+        if score < 5:
             continue
 
-        # Generate reasoning for top matches
+        # AI reasoning for strong matches (optional, skip if AI unavailable)
         reasoning = ""
         if score >= 50:
             try:
@@ -137,7 +173,7 @@ async def find_matches(
                     cp.cans if cp else "",
                 )
             except Exception:
-                reasoning = f"Высокое совпадение интересов и направлений деятельности."
+                reasoning = "Высокое совпадение интересов и направлений деятельности."
 
         match = Match(
             user1_id=current_user.id,
@@ -206,8 +242,6 @@ def get_accepted_matches(
         ).all()
     }
     mutual_ids = my_accepted_ids & their_accepted_ids
-
-    # Also include one-sided accepted (I accepted them)
     all_accepted_ids = my_accepted_ids
 
     result = []
@@ -236,7 +270,6 @@ def get_incoming_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Matches where others accepted me"""
     matches = (
         db.query(Match)
         .filter(
@@ -267,7 +300,6 @@ def get_awaiting(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Matches I accepted but they haven't responded"""
     matches = (
         db.query(Match)
         .filter(
@@ -304,7 +336,7 @@ def accept_match(
         Match.user1_id == current_user.id,
     ).first()
     if not match:
-        raise HTTPException(status_code=404, detail="Матч не найден")
+        raise HTTPException(status_code=404, detail="Мэтч не найден")
     match.status = "accepted"
     db.commit()
     return {"message": "Запрос на знакомство отправлен"}
@@ -321,7 +353,7 @@ def dismiss_match(
         Match.user1_id == current_user.id,
     ).first()
     if not match:
-        raise HTTPException(status_code=404, detail="Матч не найден")
+        raise HTTPException(status_code=404, detail="Мэтч не найден")
     match.status = "dismissed"
     db.commit()
     return {"message": "Пропущено"}
