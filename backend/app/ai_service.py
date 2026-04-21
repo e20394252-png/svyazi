@@ -22,7 +22,7 @@ async def call_llm(prompt: str, system: str = "", max_tokens: int = 500) -> str:
                 "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://svyazi.app",
-                "X-Title": "Связи - Нетворкинг платформа",
+                "X-Title": "Svyazi - Networking Platform",
             },
             json={
                 "model": settings.OPENROUTER_MODEL,
