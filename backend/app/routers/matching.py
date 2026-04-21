@@ -76,7 +76,7 @@ async def find_matches(
             db.rollback()
             raise HTTPException(
                 status_code=503,
-                detail="AI-сервис временно недоступен. Пополните баланс OpenRouter или повторите позже."
+                detail="Сервис анализа временно перегружен. Попробуйте через 30 секунд."
             )
 
     current_embedding = json.loads(profile.embedding)
