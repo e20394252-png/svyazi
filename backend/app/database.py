@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
@@ -19,6 +19,28 @@ def get_db():
         db.close()
 
 
+def run_migrations():
+    """Add new columns to existing tables safely (idempotent, ALTER TABLE IF NOT EXISTS)"""
+    migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_imported BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS wants_tags JSONB DEFAULT '[]'::jsonb",
+        "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS cans_tags JSONB DEFAULT '[]'::jsonb",
+        "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS has_tags JSONB DEFAULT '[]'::jsonb",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+            except Exception:
+                pass  # Skip if column already exists or non-critical error
+        conn.commit()
+
+
 def init_db():
-    """Create all tables"""
+    """Create all tables and run migrations"""
     Base.metadata.create_all(bind=engine)
+    run_migrations()
