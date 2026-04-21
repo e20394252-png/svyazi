@@ -117,7 +117,7 @@
 }
 .dim {
   padding: 10px 14px;
-  background: rgba(255,255,255,0.03);
+  background: rgba(124,58,237,0.04);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
 }
@@ -155,7 +155,7 @@
 }
 .reasoningText {
   font-size: 13px;
-  color: #c4b5fd;
+  color: #5b21b6;
   line-height: 1.6;
   font-style: italic;
 }
