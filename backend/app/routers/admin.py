@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, MatchProfile
-from passlib.context import CryptContext
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
