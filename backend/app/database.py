@@ -23,13 +23,15 @@ def run_migrations():
     """Add new columns to existing tables safely (idempotent, ALTER TABLE IF NOT EXISTS)"""
     migrations = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_imported BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
-        "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS wants_tags JSONB DEFAULT '[]'::jsonb",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS cans_tags JSONB DEFAULT '[]'::jsonb",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS has_tags JSONB DEFAULT '[]'::jsonb",
+        "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
     ]
     with engine.connect() as conn:
         for sql in migrations:
