@@ -57,20 +57,27 @@ async def find_matches(
             profile = MatchProfile(user_id=current_user.id)
             db.add(profile)
 
-        parsed = await analyze_occupation(text)
-        profile.wants = parsed["wants"]
-        profile.cans = parsed["cans"]
-        profile.has_items = parsed["has"]
-        profile.wants_tags = await extract_tags(parsed["wants"])
-        profile.cans_tags = await extract_tags(parsed["cans"])
-        profile.has_tags = await extract_tags(parsed["has"])
+        try:
+            parsed = await analyze_occupation(text)
+            profile.wants = parsed["wants"]
+            profile.cans = parsed["cans"]
+            profile.has_items = parsed["has"]
+            profile.wants_tags = await extract_tags(parsed["wants"])
+            profile.cans_tags = await extract_tags(parsed["cans"])
+            profile.has_tags = await extract_tags(parsed["has"])
 
-        profile_text = await build_profile_text(parsed["wants"], parsed["cans"], parsed["has"], text)
-        embedding = await get_embedding(profile_text)
-        profile.embedding = json.dumps(embedding)
-        db.commit()
-        db.refresh(current_user)
-        profile = current_user.profile
+            profile_text = await build_profile_text(parsed["wants"], parsed["cans"], parsed["has"], text)
+            embedding = await get_embedding(profile_text)
+            profile.embedding = json.dumps(embedding)
+            db.commit()
+            db.refresh(current_user)
+            profile = current_user.profile
+        except Exception as ai_err:
+            db.rollback()
+            raise HTTPException(
+                status_code=503,
+                detail="AI-сервис временно недоступен. Пополните баланс OpenRouter или повторите позже."
+            )
 
     current_embedding = json.loads(profile.embedding)
 
