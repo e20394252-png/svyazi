@@ -198,3 +198,54 @@ def admin_stats(
         "imported_users": imported,
         "users_with_embeddings": with_embeddings,
     }
+
+
+@router.post("/test-ai")
+async def test_ai(
+    _: None = Depends(verify_admin),
+):
+    """Diagnose which AI providers and models are functional"""
+    import httpx
+    from app.config import settings
+    from app.ai_service import OPENROUTER_URL, OPENROUTER_MODELS, GEMINI_MODELS
+
+    results = {}
+
+    # Test OpenRouter models
+    for model in OPENROUTER_MODELS:
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    OPENROUTER_URL,
+                    headers={
+                        "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "https://svyazi.app",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": "Say 'ok'"}],
+                        "max_tokens": 5,
+                    },
+                )
+                results[f"openrouter/{model}"] = f"{resp.status_code}: {resp.text[:100]}"
+        except Exception as e:
+            results[f"openrouter/{model}"] = f"ERROR: {str(e)[:100]}"
+
+    # Test Gemini direct
+    gemini_keys = [k.strip() for k in (settings.GEMINI_API_KEYS or "").split(",") if k.strip()]
+    results["gemini_keys_count"] = len(gemini_keys)
+    for i, key in enumerate(gemini_keys):
+        for model in GEMINI_MODELS[:2]:
+            label = f"gemini[key{i+1}]/{model}"
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.post(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+                        json={"contents": [{"parts": [{"text": "Say ok"}]}], "generationConfig": {"maxOutputTokens": 5}},
+                    )
+                    results[label] = f"{resp.status_code}: {resp.text[:100]}"
+            except Exception as e:
+                results[label] = f"ERROR: {str(e)[:100]}"
+
+    return results

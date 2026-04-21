@@ -1,93 +1,126 @@
 import httpx
 import json
 import math
+import logging
 from typing import Optional, List, Dict
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+# Models to try in order via OpenRouter
+OPENROUTER_MODELS = [
+    "openai/gpt-4.1-mini",
+    "google/gemini-flash-1.5-8b",
+    "google/gemini-2.0-flash-exp:free",
+    "mistralai/mistral-7b-instruct:free",
+]
+
+# Direct Gemini REST API model candidates
+GEMINI_MODELS = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-pro",
+]
 
 
 # ── OpenRouter LLM ────────────────────────────────────────────────────────────
 
-async def _call_openrouter(prompt: str, system: str = "", max_tokens: int = 500) -> str:
+async def _call_openrouter(prompt: str, system: str = "", max_tokens: int = 500, model: str = None) -> str:
+    model = model or OPENROUTER_MODELS[0]
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=45) as client:
         response = await client.post(
             OPENROUTER_URL,
             headers={
                 "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://svyazi.app",
-                "X-Title": "Svyazi - Networking Platform",
+                "X-Title": "Svyazi",
             },
             json={
-                "model": settings.OPENROUTER_MODEL,
+                "model": model,
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": 0.7,
             },
         )
+        if not response.is_success:
+            logger.error(f"OpenRouter [{model}] {response.status_code}: {response.text[:300]}")
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"].strip()
 
 
-# ── Gemini LLM (fallback) ─────────────────────────────────────────────────────
+# ── Gemini Direct API (fallback) ──────────────────────────────────────────────
 
-async def _call_gemini(prompt: str, system: str = "", api_key: str = "", max_tokens: int = 500) -> str:
+async def _call_gemini_direct(prompt: str, system: str = "", api_key: str = "", max_tokens: int = 500) -> str:
     full_prompt = f"{system}\n\n{prompt}" if system else prompt
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{GEMINI_URL}?key={api_key}",
-            json={
-                "contents": [{"parts": [{"text": full_prompt}]}],
-                "generationConfig": {
-                    "maxOutputTokens": max_tokens,
-                    "temperature": 0.7,
-                },
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    for gemini_model in GEMINI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    url,
+                    json={
+                        "contents": [{"parts": [{"text": full_prompt}]}],
+                        "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.7},
+                    },
+                )
+                if response.is_success:
+                    data = response.json()
+                    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                else:
+                    logger.warning(f"Gemini [{gemini_model}] {response.status_code}: {response.text[:200]}")
+        except Exception as e:
+            logger.warning(f"Gemini [{gemini_model}] exception: {e}")
+
+    raise Exception(f"All Gemini models failed for key ...{api_key[-6:]}")
 
 
-# ── Main LLM caller with fallback ─────────────────────────────────────────────
+# ── Main LLM caller with full fallback chain ──────────────────────────────────
 
 async def call_llm(prompt: str, system: str = "", max_tokens: int = 500) -> str:
-    """Call LLM: try OpenRouter first, then cycle through Gemini keys as fallback"""
-    # Try OpenRouter
-    if settings.OPENROUTER_API_KEY:
-        try:
-            return await _call_openrouter(prompt, system, max_tokens)
-        except Exception:
-            pass  # Fall through to Gemini
+    """
+    Call LLM with fallback chain:
+    1. Try each OpenRouter model in order
+    2. Try each direct Gemini key
+    """
+    errors = []
 
-    # Fallback: cycle through Gemini API keys
+    # 1. OpenRouter — try multiple models
+    if settings.OPENROUTER_API_KEY:
+        for model in OPENROUTER_MODELS:
+            try:
+                return await _call_openrouter(prompt, system, max_tokens, model=model)
+            except Exception as e:
+                errors.append(f"OpenRouter/{model}: {e}")
+                continue
+
+    # 2. Direct Gemini keys
     gemini_keys = [k.strip() for k in (settings.GEMINI_API_KEYS or "").split(",") if k.strip()]
-    last_err: Exception = Exception("No AI service available")
     for key in gemini_keys:
         try:
-            return await _call_gemini(prompt, system, key, max_tokens)
+            return await _call_gemini_direct(prompt, system, key, max_tokens)
         except Exception as e:
-            last_err = e
-            continue
+            errors.append(f"Gemini direct: {e}")
 
-    raise last_err
+    logger.error(f"All LLM providers failed: {errors}")
+    raise Exception(f"All LLM providers failed. First error: {errors[0] if errors else 'unknown'}")
 
 
-# ── Embeddings (OpenRouter / Gemini fallback) ─────────────────────────────────
+# ── Embeddings ────────────────────────────────────────────────────────────────
 
 async def get_embedding(text: str) -> List[float]:
-    """Get embedding vector. OpenRouter (1536d) → Gemini (768d) fallback.
-    NOTE: mixing providers breaks cosine similarity! Use one provider consistently."""
-    # Try OpenRouter
+    """Get embedding. OpenRouter primary (1536d), Gemini fallback (768d)."""
+    # OpenRouter embeddings
     if settings.OPENROUTER_API_KEY:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -97,44 +130,37 @@ async def get_embedding(text: str) -> List[float]:
                         "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "model": "openai/text-embedding-3-small",
-                        "input": text[:8000],
-                    },
+                    json={"model": "openai/text-embedding-3-small", "input": text[:8000]},
                 )
+                if not response.is_success:
+                    logger.error(f"OpenRouter embeddings {response.status_code}: {response.text[:300]}")
                 response.raise_for_status()
-                data = response.json()
-                return data["data"][0]["embedding"]
-        except Exception:
-            pass
-
-    # Gemini fallback embeddings
-    gemini_keys = [k.strip() for k in (settings.GEMINI_API_KEYS or "").split(",") if k.strip()]
-    last_err: Exception = Exception("No embedding service available")
-    for key in gemini_keys:
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={key}",
-                    json={
-                        "model": "models/text-embedding-004",
-                        "content": {"parts": [{"text": text[:8000]}]},
-                    },
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data["embedding"]["values"]
+                return response.json()["data"][0]["embedding"]
         except Exception as e:
-            last_err = e
-            continue
+            logger.error(f"OpenRouter embedding failed: {e}")
 
-    raise last_err
+    # Gemini embedding fallback
+    gemini_keys = [k.strip() for k in (settings.GEMINI_API_KEYS or "").split(",") if k.strip()]
+    for key in gemini_keys:
+        for model in ["text-embedding-004", "embedding-001"]:
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    response = await client.post(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent?key={key}",
+                        json={"model": f"models/{model}", "content": {"parts": [{"text": text[:8000]}]}},
+                    )
+                    if response.is_success:
+                        return response.json()["embedding"]["values"]
+                    logger.warning(f"Gemini embedding [{model}] {response.status_code}")
+            except Exception as e:
+                logger.warning(f"Gemini embedding [{model}]: {e}")
+
+    raise Exception("All embedding providers failed")
 
 
 # ── Cosine similarity ─────────────────────────────────────────────────────────
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
-    """Cosine similarity. Works even if vectors have different dimensions (uses zip)."""
     pairs = list(zip(a, b))
     dot = sum(x * y for x, y in pairs)
     norm_a = math.sqrt(sum(x * x for x, y in pairs))
@@ -144,10 +170,9 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-# ── Profile Analysis ──────────────────────────────────────────────────────────
+# ── Profile analysis ──────────────────────────────────────────────────────────
 
 async def analyze_occupation(occupation: str) -> Dict[str, str]:
-    """Parse occupation text into Wants/Cans/Has using LLM"""
     prompt = f"""Проанализируй описание человека и раздели на три категории.
 
 Описание: "{occupation}"
@@ -166,17 +191,12 @@ async def analyze_occupation(occupation: str) -> Dict[str, str]:
     try:
         clean = result.replace("```json", "").replace("```", "").strip()
         data = json.loads(clean)
-        return {
-            "wants": data.get("wants", ""),
-            "cans": data.get("cans", ""),
-            "has": data.get("has", ""),
-        }
+        return {"wants": data.get("wants", ""), "cans": data.get("cans", ""), "has": data.get("has", "")}
     except Exception:
         return {"wants": "", "cans": occupation, "has": ""}
 
 
 async def extract_tags(text: str) -> List[str]:
-    """Extract short keyword tags from text"""
     if not text or not text.strip():
         return []
     prompt = f"""Извлеки 3-7 коротких тегов (1-3 слова каждый) из текста.
@@ -193,14 +213,9 @@ async def extract_tags(text: str) -> List[str]:
 
 
 async def generate_match_reasoning(
-    user1_name: str,
-    user1_wants: str,
-    user1_cans: str,
-    user2_name: str,
-    user2_wants: str,
-    user2_cans: str,
+    user1_name: str, user1_wants: str, user1_cans: str,
+    user2_name: str, user2_wants: str, user2_cans: str,
 ) -> str:
-    """Generate human-readable explanation of why two people match"""
     prompt = f"""Объясни почему двум людям стоит познакомиться. Пиши от второго лица, обращаясь к первому человеку.
 
 {user1_name} (вы):
@@ -211,13 +226,11 @@ async def generate_match_reasoning(
 - Ищет: {user2_wants or 'не указано'}
 - Предлагает: {user2_cans or 'не указано'}
 
-Напиши 2-3 предложения объяснения совпадения. Будь конкретным и убедительным. Без заголовков."""
-
+Напиши 2-3 предложения. Будь конкретным. Без заголовков."""
     return await call_llm(prompt, max_tokens=200)
 
 
 async def build_profile_text(wants: str, cans: str, has_items: str, occupation: str = "") -> str:
-    """Build unified profile text for embedding"""
     parts = []
     if wants:
         parts.append(f"Ищу: {wants}")
