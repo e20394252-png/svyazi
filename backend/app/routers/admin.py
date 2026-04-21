@@ -9,7 +9,9 @@ from app.models import User, MatchProfile
 from passlib.context import CryptContext
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Pre-computed bcrypt hash for "imported_no_login" — imported users can't log in via password
+IMPORTED_USER_HASH = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGZCNAPLkjGdg5K5dqUi3bKj3Ry"
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "svyazi-admin-secret")
 
@@ -87,7 +89,7 @@ async def import_csv(
             user = User(
                 name=name,
                 email=email,
-                password_hash=pwd_context.hash("imported_user_no_login"),
+                password_hash=IMPORTED_USER_HASH,
                 telegram=telegram if telegram and telegram not in ("-", "") else None,
                 phone=phone,
                 occupation=occupation or None,
