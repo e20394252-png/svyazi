@@ -65,6 +65,20 @@ export default function ChatPage() {
     return name.split(' ').slice(0, 2).map((n: string) => n[0]).join('').toUpperCase()
   }
 
+  function cleanText(text: string | null | undefined): string | null {
+    if (!text) return null
+    const qRatio = (text.match(/\?/g) || []).length / Math.max(text.length, 1)
+    return qRatio > 0.2 ? null : text
+  }
+
+  function getSubtitle(profile: any): string | null {
+    if (!profile) return null
+    if (cleanText(profile.occupation)) return cleanText(profile.occupation)!.slice(0, 60)
+    if (profile.cans) return profile.cans.slice(0, 60)
+    if (profile.wants) return profile.wants.slice(0, 60)
+    return null
+  }
+
   function formatTime(ts: string) {
     return new Date(ts).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
   }
@@ -81,8 +95,8 @@ export default function ChatPage() {
               <div className="avatar avatar-sm">{getInitials(theirProfile.name)}</div>
               <div>
                 <div className={styles.partnerName}>{theirProfile.name}</div>
-                {theirProfile.occupation && (
-                  <div className={styles.partnerOcc}>{theirProfile.occupation.slice(0, 50)}...</div>
+                {getSubtitle(theirProfile) && (
+                  <div className={styles.partnerOcc}>{getSubtitle(theirProfile)}</div>
                 )}
               </div>
             </div>

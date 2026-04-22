@@ -11,6 +11,15 @@ from datetime import datetime, timezone
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
 
+def _clean(text) -> str:
+    """Strip garbled CSV text (encoding artifacts show as ?)"""
+    if not text:
+        return None
+    text = str(text)
+    q_ratio = text.count('?') / max(len(text), 1)
+    return None if q_ratio > 0.2 else text
+
+
 def build_profile_out(user: User) -> dict:
     profile = user.profile
     return {
@@ -19,8 +28,8 @@ def build_profile_out(user: User) -> dict:
         "email": user.email,
         "telegram": user.telegram,
         "phone": user.phone,
-        "occupation": user.occupation,
-        "bio": user.bio,
+        "occupation": _clean(user.occupation),
+        "bio": _clean(user.bio),
         "city": user.city,
         "wants": profile.wants if profile else None,
         "cans": profile.cans if profile else None,
