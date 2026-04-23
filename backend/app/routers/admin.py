@@ -123,6 +123,102 @@ async def import_csv(
     }
 
 
+@router.post("/sync-contact")
+async def sync_contact(
+    data: dict,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_admin),
+):
+    """
+    Webhook for n8n Data Tables sync.
+    Accepts a single contact in JSON format:
+    {
+      "name": "Иван Иванов",
+      "phone": "+79001234567",     // optional
+      "telegram": "@ivan",         // optional
+      "occupation": "Предприниматель, ищу инвесторов"  // main text for AI analysis
+    }
+    Idempotent: skips duplicates. Returns created/updated/skipped status.
+    """
+    from app.ai_service import analyze_occupation, extract_tags
+
+    name = (data.get("name") or data.get("FIO") or "").strip()
+    phone_raw = (data.get("phone") or data.get("number") or "").strip()
+    telegram = (data.get("telegram") or data.get("Telegram") or "").strip()
+    occupation = (data.get("occupation") or data.get("Occupation") or data.get("bio") or "").strip()
+
+    if not name and not occupation and not telegram:
+        raise HTTPException(status_code=422, detail="Нужно хотя бы одно поле: name, telegram или occupation")
+
+    if not name:
+        name = telegram or f"Contact_{phone_raw or 'unknown'}"
+
+    phone = clean_phone(phone_raw)
+    email = make_email(name, telegram, phone)
+
+    # Check for duplicate
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        # Update occupation if it changed
+        if occupation and existing.occupation != occupation:
+            existing.occupation = occupation
+            existing.bio = occupation
+            # Reset AI profile so it gets re-analyzed
+            if existing.profile:
+                existing.profile.wants = None
+                existing.profile.cans = None
+                existing.profile.has_items = None
+                existing.profile.embedding = None
+            db.commit()
+            return {"status": "updated", "user_id": existing.id, "email": email}
+        return {"status": "skipped", "user_id": existing.id, "email": email}
+
+    # Create new user
+    user = User(
+        name=name,
+        email=email,
+        password_hash=IMPORTED_USER_HASH,
+        telegram=telegram if telegram and telegram not in ("-", "") else None,
+        phone=phone,
+        occupation=occupation or None,
+        bio=occupation or None,
+        is_imported=True,
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+
+    profile = MatchProfile(user_id=user.id)
+    db.add(profile)
+    db.commit()
+    db.refresh(user)
+
+    # Run AI analysis immediately (non-blocking — errors don't fail the response)
+    if occupation:
+        try:
+            parsed = await analyze_occupation(occupation)
+            profile.wants = parsed.get("wants", "")
+            profile.cans = parsed.get("cans", "")
+            profile.has_items = parsed.get("has", "")
+            try:
+                profile.wants_tags = await extract_tags(parsed.get("wants", ""))
+                profile.cans_tags = await extract_tags(parsed.get("cans", ""))
+                profile.has_tags = await extract_tags(parsed.get("has", ""))
+            except Exception:
+                pass
+            db.commit()
+        except Exception as e:
+            # AI failed — user is still created, embedding will be done in next batch
+            pass
+
+    return {
+        "status": "created",
+        "user_id": user.id,
+        "email": email,
+        "ai_analyzed": bool(profile.wants or profile.cans),
+    }
+
+
 @router.post("/generate-embeddings")
 async def generate_embeddings(
     db: Session = Depends(get_db),
