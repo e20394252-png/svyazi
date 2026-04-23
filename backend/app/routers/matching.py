@@ -156,39 +156,44 @@ async def find_matches(
     import json
     matches_data = []
     
-    # Логируем для отладки (в консоли Railway будет видно)
-    print(f"DEBUG: Received data type: {type(data)}")
+    # Вспомогательная функция для извлечения мэтчей из одного элемента
+    def extract_matches(item):
+        if not isinstance(item, dict): return []
+        
+        # Если это уже готовый объект мэтча
+        if "user_id" in item and "score" in item:
+            return [item]
+        
+        # Если это сырой ответ от ИИ (OpenAI/Pollinations)
+        if "choices" in item:
+            try:
+                content = item["choices"][0]["message"]["content"]
+                clean_content = content.replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(clean_content)
+                if isinstance(parsed, dict):
+                    res = parsed.get("matches", [])
+                    return res if isinstance(res, list) else [res]
+                elif isinstance(parsed, list):
+                    return parsed
+            except Exception as e:
+                print(f"DEBUG: Parse error: {e}")
+        return []
+
+    # Обрабатываем входящие данные
+    if isinstance(data, list):
+        for entry in data:
+            matches_data.extend(extract_matches(entry))
+    elif isinstance(data, dict):
+        # Проверяем, не является ли сам объект ответом от ИИ или списком мэтчей
+        if "matches" in data and isinstance(data["matches"], list):
+            matches_data = data["matches"]
+        else:
+            matches_data = extract_matches(data)
     
-    if isinstance(data, dict):
-        matches_data = data.get("matches", [])
-    elif isinstance(data, list):
-        for item in data:
-            if not isinstance(item, dict): continue
-            
-            # Вариант 1: Прямой объект мэтча
-            if "user_id" in item and "score" in item:
-                matches_data.append(item)
-            # Вариант 2: Ответ от OpenAI/Pollinations
-            elif "choices" in item:
-                try:
-                    content = item["choices"][0]["message"]["content"]
-                    # ИИ иногда возвращает строку с markdown-разметкой ```json ... ```
-                    clean_content = content.replace("```json", "").replace("```", "").strip()
-                    parsed = json.loads(clean_content)
-                    if isinstance(parsed, dict):
-                        inner_matches = parsed.get("matches", [])
-                        if isinstance(inner_matches, list):
-                            matches_data.extend(inner_matches)
-                    elif isinstance(parsed, list):
-                        matches_data.extend(parsed)
-                except Exception as e:
-                    print(f"DEBUG: Error parsing item: {e}")
-                    continue
-    
-    print(f"DEBUG: Total matches found in payload: {len(matches_data)}")
+    print(f"DEBUG: Total matches extracted: {len(matches_data)}")
     
     if not matches_data:
-        return {"message": "Подходящих мэтчей пока не найдено (пустой ответ от ИИ)."}
+        return {"message": "Подходящих мэтчей пока не найдено (не удалось извлечь данные из ответа ИИ)."}
 
     existing_match_ids = {
         m.user2_id for m in db.query(Match).filter(Match.user1_id == current_user.id).all()
