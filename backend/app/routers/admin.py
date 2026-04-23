@@ -146,8 +146,13 @@ async def sync_contact(
     phone_raw = (data.get("phone") or data.get("number") or "").strip()
     telegram = (data.get("telegram") or data.get("Telegram") or "").strip()
     occupation = (data.get("occupation") or data.get("Occupation") or data.get("bio") or "").strip()
+    zapros = (data.get("zapros") or data.get("Zapros") or data.get("request") or "").strip()
 
-    if not name and not occupation and not telegram:
+    # Build full text: occupation + zapros combined
+    full_text_parts = [p for p in [occupation, zapros] if p]
+    full_text = " | ".join(full_text_parts)
+
+    if not name and not full_text and not telegram:
         raise HTTPException(status_code=422, detail="Нужно хотя бы одно поле: name, telegram или occupation")
 
     if not name:
@@ -159,13 +164,13 @@ async def sync_contact(
     # Check for duplicate
     existing = db.query(User).filter(User.email == email).first()
     if existing:
-        # Update occupation if it changed
-        if occupation and existing.occupation != occupation:
-            existing.occupation = occupation
-            existing.bio = occupation
-            # Reset AI profile so it gets re-analyzed
+        # Update if occupation or zapros changed
+        changed = (full_text and existing.bio != full_text)
+        if changed:
+            existing.occupation = occupation or existing.occupation
+            existing.bio = full_text
             if existing.profile:
-                existing.profile.wants = None
+                existing.profile.wants = zapros or None  # Zapros → direct wants
                 existing.profile.cans = None
                 existing.profile.has_items = None
                 existing.profile.embedding = None
@@ -181,7 +186,7 @@ async def sync_contact(
         telegram=telegram if telegram and telegram not in ("-", "") else None,
         phone=phone,
         occupation=occupation or None,
-        bio=occupation or None,
+        bio=full_text or occupation or None,  # full_text includes zapros
         is_imported=True,
         is_active=True,
     )
