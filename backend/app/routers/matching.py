@@ -137,34 +137,51 @@ async def find_matches(
     if not settings.N8N_MATCHING_WEBHOOK_URL:
         raise HTTPException(status_code=500, detail="Webhook URL n8n не настроен в конфигурации (N8N_MATCHING_WEBHOOK_URL)")
 
-    # ── Step 4: Call n8n Webhook ─────────────────────────
+@router.post("/find")
+async def find_matches(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Триггер для запуска поиска мэтчей в n8n (Асинхронно)"""
     payload = {
-        "user": get_profile_out(current_user)
+        "user": get_profile_out(current_user),
+        "callback_url": f"{settings.BACKEND_URL}/matching/callback?user_id={current_user.id}"
     }
 
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        try:
-            response = await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
-            response.raise_for_status()
-            data = response.json()
-        except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="n8n не ответил за 5 минут. Попробуйте уменьшить количество кандидатов в n8n.")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Ошибка вызова n8n: {e}")
+    async def trigger_n8n():
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
+            except Exception as e:
+                print(f"DEBUG: Failed to trigger n8n: {e}")
 
-    # ── Step 5: Process n8n response ────────────────────────────
+    # Запускаем n8n в фоне и сразу отвечаем пользователю
+    import asyncio
+    asyncio.create_task(trigger_n8n())
+
+    return {"message": "Поиск запущен! Это может занять пару минут для 600+ контактов. Результаты появятся здесь скоро."}
+
+
+@router.post("/callback")
+async def matching_callback(
+    user_id: int,
+    data: Any = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Прием результатов от n8n, когда он закончит работу"""
+    # Ищем пользователя, для которого делался поиск
+    search_user = db.query(User).filter(User.id == user_id).first()
+    if not search_user:
+        return {"status": "error", "message": "User not found"}
+
+    # ── Процесс парсинга (тот же самый) ─────────────────────────
     import json
     matches_data = []
     
-    # Вспомогательная функция для извлечения мэтчей из одного элемента
     def extract_matches(item):
         if not isinstance(item, dict): return []
-        
-        # Если это уже готовый объект мэтча
-        if "user_id" in item and "score" in item:
-            return [item]
-        
-        # Если это сырой ответ от ИИ (OpenAI/Pollinations)
+        if "user_id" in item and "score" in item: return [item]
+        if "telegram" in item: return [item] # Поддержка мэтчинга по TG
         if "choices" in item:
             try:
                 content = item["choices"][0]["message"]["content"]
@@ -175,61 +192,33 @@ async def find_matches(
                     return res if isinstance(res, list) else [res]
                 elif isinstance(parsed, list):
                     return parsed
-            except Exception as e:
-                print(f"DEBUG: Parse error: {e}")
+            except Exception: pass
         return []
 
-    # Обрабатываем входящие данные
     if isinstance(data, list):
-        for entry in data:
-            matches_data.extend(extract_matches(entry))
+        for entry in data: matches_data.extend(extract_matches(entry))
     elif isinstance(data, dict):
-        # Проверяем, не является ли сам объект ответом от ИИ или списком мэтчей
-        if "matches" in data and isinstance(data["matches"], list):
-            matches_data = data["matches"]
-        else:
-            matches_data = extract_matches(data)
-    
-    print(f"DEBUG: Total matches extracted: {len(matches_data)}")
-    
-    if not matches_data:
-        return {"message": "Подходящих мэтчей пока не найдено (не удалось извлечь данные из ответа ИИ)."}
+        matches_data = data.get("matches", []) if "matches" in data else extract_matches(data)
 
-    # ── Step 5.5: Clear old matches ─────────────────────────────
-    # Удаляем старые мэтчи этого пользователя, чтобы не видеть "хвосты" от прошлых запусков
-    db.query(Match).filter(Match.user1_id == current_user.id).delete()
-    db.commit()
+    # ── Сохранение ──────────────────────────────────────────────
+    # Удаляем старые мэтчи перед обновлением
+    db.query(Match).filter(Match.user1_id == user_id).delete()
     
-    existing_match_ids = set() # Сбрасываем список существующих
-
-    created_matches = []
-    # ── Step 6: Save matches to database ─────────────────────────
     processed_count = 0
     for item in matches_data:
-        # Теперь ищем по Telegram вместо ID, так как ID могут не совпадать
         tg_handle = item.get("telegram", "").replace("@", "").strip()
-        if not tg_handle:
-            continue
-            
-        try:
-            score = float(item.get("score", 0))
-        except (ValueError, TypeError):
-            score = 0
-            
+        score = float(item.get("score", 0))
         reasoning = item.get("reasoning", "")
         
-        # Ищем пользователя в БД по нику в Telegram
-        target_user = db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
+        target_user = None
+        if tg_handle:
+            target_user = db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
         
-        if not target_user or target_user.id == current_user.id:
-            continue
-            
-        # Проверяем, нет ли уже такого мэтча
-        if target_user.id in existing_match_ids:
+        if not target_user or target_user.id == user_id:
             continue
             
         new_match = Match(
-            user1_id=current_user.id,
+            user1_id=user_id,
             user2_id=target_user.id,
             score=score,
             reasoning=reasoning,
@@ -237,11 +226,10 @@ async def find_matches(
         )
         db.add(new_match)
         processed_count += 1
-        existing_match_ids.add(target_user.id)
     
     db.commit()
-    print(f"DEBUG: Successfully saved {processed_count} matches by Telegram.")
-    return {"message": f"Поиск завершен. Найдено и сохранено мэтчей: {processed_count}"}
+    print(f"DEBUG CALLBACK: Saved {processed_count} matches for user {user_id}")
+    return {"status": "success", "saved": processed_count}
 
 
 @router.get("/top")
