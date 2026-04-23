@@ -153,8 +153,29 @@ async def find_matches(
             raise HTTPException(status_code=500, detail=f"Ошибка вызова n8n: {e}")
 
     # ── Step 5: Process n8n response ────────────────────────────
-    # Ожидаемый формат от n8n: {"matches": [{"user_id": 123, "score": 85, "reasoning": "Текст"}]}
-    matches_data = data.get("matches", [])
+    # Поддерживаем и одиночный объект {"matches": [...]}, и массив результатов от n8n
+    import json
+    matches_data = []
+    
+    if isinstance(data, dict):
+        matches_data = data.get("matches", [])
+    elif isinstance(data, list):
+        for item in data:
+            # Если n8n вернул массив объектов, где каждый - это мэтч
+            if isinstance(item, dict):
+                if "user_id" in item:
+                    matches_data.append(item)
+                # Или если n8n вернул массив сырых ответов OpenAI
+                elif "choices" in item:
+                    try:
+                        content = item["choices"][0]["message"]["content"]
+                        parsed = json.loads(content)
+                        if isinstance(parsed, dict):
+                            matches_data.extend(parsed.get("matches", []))
+                        elif isinstance(parsed, list):
+                            matches_data.extend(parsed)
+                    except Exception:
+                        continue
     
     if not matches_data:
         return {"message": "Подходящих мэтчей пока не найдено."}
