@@ -195,9 +195,12 @@ async def find_matches(
     if not matches_data:
         return {"message": "Подходящих мэтчей пока не найдено (не удалось извлечь данные из ответа ИИ)."}
 
-    existing_match_ids = {
-        m.user2_id for m in db.query(Match).filter(Match.user1_id == current_user.id).all()
-    }
+    # ── Step 5.5: Clear old matches ─────────────────────────────
+    # Удаляем старые мэтчи этого пользователя, чтобы не видеть "хвосты" от прошлых запусков
+    db.query(Match).filter(Match.user1_id == current_user.id).delete()
+    db.commit()
+    
+    existing_match_ids = set() # Сбрасываем список существующих
 
     created_matches = []
     # ── Step 6: Save matches to database ─────────────────────────
