@@ -327,11 +327,12 @@ async def rerank_matches(user_profile: Dict, candidates: List[Dict]) -> List[Dic
         clean = response.replace("```json", "").replace("```", "").strip()
         scores = json.loads(clean)
         
-        # Update candidates with new scores
-        for i, score_data in enumerate(scores):
-            if i < len(candidates):
-                candidates[i]["score"] = float(score_data.get("score", 0))
-                candidates[i]["reasoning"] = score_data.get("reasoning", "")
+        # Update candidates with new scores (ensure it's a list)
+        if isinstance(scores, list):
+            for i, score_data in enumerate(scores):
+                if i < len(candidates) and isinstance(score_data, dict):
+                    candidates[i]["score"] = float(score_data.get("score", 0))
+                    candidates[i]["reasoning"] = str(score_data.get("reasoning", ""))
         
         return candidates
     except Exception as e:
