@@ -86,20 +86,12 @@ async def _call_gemini_direct(prompt: str, system: str = "", api_key: str = "", 
 async def call_llm(prompt: str, system: str = "", max_tokens: int = 500) -> str:
     """
     Call LLM with fallback chain:
-    1. Try each direct Gemini key (rotate 3 keys)
-    2. Try each OpenRouter model
+    1. Try each OpenRouter model (PRIMARY)
+    2. Try each direct Gemini key
     """
     errors = []
 
-    # 1. Direct Gemini keys (primary - no 402 issues)
-    gemini_keys = [k.strip() for k in (settings.GEMINI_API_KEYS or "").split(",") if k.strip()]
-    for key in gemini_keys:
-        try:
-            return await _call_gemini_direct(prompt, system, key, max_tokens)
-        except Exception as e:
-            errors.append(f"Gemini direct: {str(e)[:80]}")
-
-    # 2. OpenRouter fallback
+    # 1. OpenRouter (Primary)
     if settings.OPENROUTER_API_KEY:
         for model in OPENROUTER_MODELS:
             try:
@@ -108,8 +100,16 @@ async def call_llm(prompt: str, system: str = "", max_tokens: int = 500) -> str:
                 errors.append(f"OpenRouter/{model}: {str(e)[:80]}")
                 continue
 
+    # 2. Direct Gemini keys (Fallback)
+    gemini_keys = [k.strip() for k in (settings.GEMINI_API_KEYS or "").split(",") if k.strip()]
+    for key in gemini_keys:
+        try:
+            return await _call_gemini_direct(prompt, system, key, max_tokens)
+        except Exception as e:
+            errors.append(f"Gemini direct: {str(e)[:80]}")
+
     logger.error(f"All LLM providers failed: {errors}")
-    raise Exception(f"All LLM providers failed. Errors: {'; '.join(errors[:3])}")
+    raise Exception(f"All LLM providers failed. Errors: {'; '.join(errors)}")
 
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
