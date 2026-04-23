@@ -84,7 +84,7 @@ def get_profile_out(user: User) -> dict:
         "wants_tags": profile.wants_tags if profile else [],
         "cans_tags": profile.cans_tags if profile else [],
         "has_tags": profile.has_tags if profile else [],
-        "created_at": user.created_at,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
     }
 
 
