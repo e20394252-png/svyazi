@@ -142,13 +142,13 @@ async def find_matches(
         "user": get_profile_out(current_user)
     }
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         try:
             response = await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
             response.raise_for_status()
             data = response.json()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="n8n не ответил за 60 секунд")
+            raise HTTPException(status_code=504, detail="n8n не ответил за 5 минут. Попробуйте уменьшить количество кандидатов в n8n.")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка вызова n8n: {e}")
 
