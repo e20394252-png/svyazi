@@ -171,7 +171,9 @@ async def find_matches(
     for sim, candidate_user in top_candidates:
         rerank_list.append({
             "user": get_profile_out(candidate_user),
-            "orig_sim": sim
+            "orig_sim": sim,
+            "score": round(sim * 100, 1), # Default score if AI fails
+            "reasoning": ""
         })
     
     user_profile = get_profile_out(current_user)
