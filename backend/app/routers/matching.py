@@ -200,31 +200,45 @@ async def find_matches(
     }
 
     created_matches = []
+    # ── Step 6: Save matches to database ─────────────────────────
+    processed_count = 0
     for item in matches_data:
-        uid = item.get("user_id")
-        if not uid or uid == current_user.id or uid in existing_match_ids:
+        # Теперь ищем по Telegram вместо ID, так как ID могут не совпадать
+        tg_handle = item.get("telegram", "").replace("@", "").strip()
+        if not tg_handle:
             continue
-
-        score = float(item.get("score", 0))
+            
+        try:
+            score = float(item.get("score", 0))
+        except (ValueError, TypeError):
+            score = 0
+            
         reasoning = item.get("reasoning", "")
-
-        # Verify target user exists
-        target_user = db.query(User).filter(User.id == uid).first()
-        if not target_user:
+        
+        # Ищем пользователя в БД по нику в Telegram
+        target_user = db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
+        
+        if not target_user or target_user.id == current_user.id:
             continue
-
-        match = Match(
+            
+        # Проверяем, нет ли уже такого мэтча
+        if target_user.id in existing_match_ids:
+            continue
+            
+        new_match = Match(
             user1_id=current_user.id,
-            user2_id=uid,
+            user2_id=target_user.id,
             score=score,
             reasoning=reasoning,
-            status="pending",
+            status="pending"
         )
-        db.add(match)
-        created_matches.append(match)
-
+        db.add(new_match)
+        processed_count += 1
+        existing_match_ids.add(target_user.id)
+    
     db.commit()
-    return {"message": f"n8n вернул {len(created_matches)} новых совпадений"}
+    print(f"DEBUG: Successfully saved {processed_count} matches by Telegram.")
+    return {"message": f"Поиск завершен. Найдено и сохранено мэтчей: {processed_count}"}
 
 
 @router.get("/top")
