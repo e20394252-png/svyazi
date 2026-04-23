@@ -143,23 +143,26 @@ async def find_matches(
     current_user: User = Depends(get_current_user),
 ):
     """Триггер для запуска поиска мэтчей в n8n (Асинхронно)"""
+    # Очищаем старые мэтчи СРАЗУ при запуске нового поиска
+    db.query(Match).filter(Match.user1_id == current_user.id).delete()
+    db.commit()
+
     payload = {
         "user": get_profile_out(current_user),
         "callback_url": f"{settings.BACKEND_URL}/matching/callback?user_id={current_user.id}"
     }
 
     async def trigger_n8n():
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             try:
                 await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
             except Exception as e:
                 print(f"DEBUG: Failed to trigger n8n: {e}")
 
-    # Запускаем n8n в фоне и сразу отвечаем пользователю
     import asyncio
     asyncio.create_task(trigger_n8n())
 
-    return {"message": "Поиск запущен! Это может занять пару минут для 600+ контактов. Результаты появятся здесь скоро."}
+    return {"message": "Поиск запущен! Старые мэтчи удалены. Новые появятся здесь в течение 1-2 минут."}
 
 
 @router.post("/callback")
@@ -168,20 +171,15 @@ async def matching_callback(
     data: Any = Body(...),
     db: Session = Depends(get_db),
 ):
-    """Прием результатов от n8n, когда он закончит работу"""
-    # Ищем пользователя, для которого делался поиск
-    search_user = db.query(User).filter(User.id == user_id).first()
-    if not search_user:
-        return {"status": "error", "message": "User not found"}
-
-    # ── Процесс парсинга (тот же самый) ─────────────────────────
+    """Прием результатов от n8n"""
+    # ── Процесс парсинга ────────────────────────────────────────
     import json
     matches_data = []
     
     def extract_matches(item):
         if not isinstance(item, dict): return []
+        if "telegram" in item: return [item]
         if "user_id" in item and "score" in item: return [item]
-        if "telegram" in item: return [item] # Поддержка мэтчинга по TG
         if "choices" in item:
             try:
                 content = item["choices"][0]["message"]["content"]
@@ -201,9 +199,6 @@ async def matching_callback(
         matches_data = data.get("matches", []) if "matches" in data else extract_matches(data)
 
     # ── Сохранение ──────────────────────────────────────────────
-    # Удаляем старые мэтчи перед обновлением
-    db.query(Match).filter(Match.user1_id == user_id).delete()
-    
     processed_count = 0
     for item in matches_data:
         tg_handle = item.get("telegram", "").replace("@", "").strip()
@@ -217,6 +212,7 @@ async def matching_callback(
         if not target_user or target_user.id == user_id:
             continue
             
+        # Добавляем мэтч (без удаления, так как удалили в /find)
         new_match = Match(
             user1_id=user_id,
             user2_id=target_user.id,
@@ -228,8 +224,8 @@ async def matching_callback(
         processed_count += 1
     
     db.commit()
-    print(f"DEBUG CALLBACK: Saved {processed_count} matches for user {user_id}")
-    return {"status": "success", "saved": processed_count}
+    print(f"DEBUG CALLBACK: Added {processed_count} matches for user {user_id}")
+    return {"status": "success", "added": processed_count}
 
 
 @router.get("/top")
