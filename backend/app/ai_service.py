@@ -21,6 +21,10 @@ GEMINI_MODEL_URLS = [
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
 ]
 
+# Pollinations AI
+POLLINATIONS_URL = "https://text.pollinations.ai/openai/chat/completions"
+POLLINATIONS_MODELS = ["openai", "openai-fast"]
+
 
 # ── OpenRouter LLM ────────────────────────────────────────────────────────────
 
@@ -81,6 +85,36 @@ async def _call_gemini_direct(prompt: str, system: str = "", api_key: str = "", 
     raise Exception(f"All Gemini models failed for key ...{api_key[-6:]}")
 
 
+# ── Pollinations AI (backup/free provider) ───────────────────────────────────
+
+async def _call_pollinations(prompt: str, system: str = "", max_tokens: int = 500, model: str = None) -> str:
+    model = model or POLLINATIONS_MODELS[0]
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    async with httpx.AsyncClient(timeout=45) as client:
+        headers = {"Content-Type": "application/json"}
+        if settings.POLLINATIONS_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.POLLINATIONS_API_KEY}"
+            
+        response = await client.post(
+            POLLINATIONS_URL,
+            headers=headers,
+            json={
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+            },
+        )
+        if not response.is_success:
+            logger.error(f"Pollinations [{model}] {response.status_code}: {response.text[:300]}")
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"].strip()
+
+
 # ── Main LLM caller with full fallback chain ──────────────────────────────────
 
 async def call_llm(prompt: str, system: str = "", max_tokens: int = 500) -> str:
@@ -100,7 +134,16 @@ async def call_llm(prompt: str, system: str = "", max_tokens: int = 500) -> str:
                 errors.append(f"OpenRouter/{model}: {str(e)[:80]}")
                 continue
 
-    # 2. Direct Gemini keys (Fallback)
+    # 2. Pollinations AI (Secondary)
+    if settings.POLLINATIONS_API_KEY:
+        for model in POLLINATIONS_MODELS:
+            try:
+                return await _call_pollinations(prompt, system, max_tokens, model=model)
+            except Exception as e:
+                errors.append(f"Pollinations/{model}: {str(e)[:80]}")
+                continue
+
+    # 3. Direct Gemini keys (Fallback)
     gemini_keys = [k.strip() for k in (settings.GEMINI_API_KEYS or "").split(",") if k.strip()]
     for key in gemini_keys:
         try:
@@ -237,3 +280,60 @@ async def build_profile_text(wants: str, cans: str, has_items: str, occupation: 
     if occupation and not (wants or cans or has_items):
         parts.append(occupation)
     return " | ".join(parts)
+
+
+async def rerank_matches(user_profile: Dict, candidates: List[Dict]) -> List[Dict]:
+    """
+    Use LLM to evaluate the actual relevance of matches.
+    Returns the candidates list with updated scores and reasoning.
+    """
+    if not candidates:
+        return []
+
+    # Prepare prompt for LLM
+    candidates_text = ""
+    for i, c in enumerate(candidates):
+        candidates_text += f"\n--- КАНДИДАТ №{i+1} ---\n"
+        candidates_text += f"Имя: {c['user']['name']}\n"
+        candidates_text += f"Занимается: {c['user']['occupation'] or 'не указано'}\n"
+        candidates_text += f"Ищет: {c['user']['wants'] or 'не указано'}\n"
+        candidates_text += f"Может: {c['user']['cans'] or 'не указано'}\n"
+
+    system_prompt = """Ты — эксперт по нетворкингу. Твоя задача — оценить, насколько двум людям полезно познакомиться.
+Оценивай по шкале от 0 до 100, где:
+0-20: Совсем не подходят (разные сферы, нет пересечения интересов).
+21-50: Слабое совпадение (могут быть полезны в теории, но связи мало).
+51-80: Хорошее совпадение (есть общие интересы или один может помочь другому).
+81-100: Идеальный мэтч (прямой запрос одного совпадает с возможностями другого).
+
+ВАЖНО: Если один человек ищет бытовую услугу (например, массаж), а другой предлагает бизнес-инвестиции — это 0%.
+Будь строгим критиком. Не завышай баллы за вежливость.
+
+Ответь СТРОГО в формате JSON списка объектов:
+[{"id": 1, "score": 85, "reasoning": "Короткое объяснение на русском"}, ...]
+Порядок должен соответствовать списку кандидатов."""
+
+    prompt = f"""ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ:
+Имя: {user_profile['name']}
+Занимается: {user_profile['occupation'] or 'не указано'}
+Ищет: {user_profile['wants'] or 'не указано'}
+Может: {user_profile['cans'] or 'не указано'}
+
+СПИСОК КАНДИДАТОВ ДЛЯ ОЦЕНКИ:{candidates_text}"""
+
+    try:
+        response = await call_llm(prompt, system=system_prompt, max_tokens=1000)
+        # Clean JSON from markdown
+        clean = response.replace("```json", "").replace("```", "").strip()
+        scores = json.loads(clean)
+        
+        # Update candidates with new scores
+        for i, score_data in enumerate(scores):
+            if i < len(candidates):
+                candidates[i]["score"] = float(score_data.get("score", 0))
+                candidates[i]["reasoning"] = score_data.get("reasoning", "")
+        
+        return candidates
+    except Exception as e:
+        logger.error(f"Reranking failed: {e}")
+        return candidates # return original if AI fails

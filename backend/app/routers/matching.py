@@ -6,7 +6,8 @@ from app.models import User, MatchProfile, Match
 from app.auth import get_current_user
 from app.ai_service import (
     cosine_similarity, generate_match_reasoning,
-    get_embedding, build_profile_text, analyze_occupation, extract_tags
+    get_embedding, build_profile_text, analyze_occupation, extract_tags,
+    rerank_matches
 )
 from typing import List
 import json
@@ -22,8 +23,7 @@ def text_similarity(a: str, b: str) -> float:
     """Russian keyword similarity with basic root/substring matching"""
     def get_roots(text: str) -> set:
         tokens = re.findall(r'[а-яёa-z0-9]+', (text or "").lower())
-        # Basic stemming: take first 6 chars for long words to match roots (массаж <-> массажист)
-        # Skip very short common words (<4 chars)
+        # Basic stemming: take first 6 chars for long words
         return set(w[:6] if len(w) > 5 else w for w in tokens if len(w) > 3)
 
     a_roots = get_roots(a)
@@ -36,7 +36,15 @@ def text_similarity(a: str, b: str) -> float:
     union = a_roots.union(b_roots)
     
     # Jaccard index for roots
-    return len(intersection) / len(union) if union else 0.0
+    score = len(intersection) / len(union) if union else 0.0
+    
+    # Boost if there is an exact keyword match for short important words
+    a_tokens = set(re.findall(r'[а-яёa-z0-9]+', (a or "").lower()))
+    b_tokens = set(re.findall(r'[а-яёa-z0-9]+', (b or "").lower()))
+    if a_tokens.intersection(b_tokens):
+        score += 0.1 # 10% bonus for exact word match
+        
+    return min(score, 1.0)
 
 
 def build_profile_text_local(profile: MatchProfile, user: User) -> str:
@@ -157,42 +165,40 @@ async def find_matches(
     candidates.sort(key=lambda x: x[0], reverse=True)
     top_candidates = candidates[:20]
 
-    # ── Step 6: filter already matched ─────────────────────────────
+    # ── Step 6: AI Reranking («Склеивание») ────────────────────────
+    # Format candidates for the reranker
+    rerank_list = []
+    for sim, candidate_user in top_candidates:
+        rerank_list.append({
+            "user": get_profile_out(candidate_user),
+            "orig_sim": sim
+        })
+    
+    user_profile = get_profile_out(current_user)
+    reranked = await rerank_matches(user_profile, rerank_list)
+    
+    # ── Step 7: Filter & Create Matches ────────────────────────────
     existing_match_ids = {
         m.user2_id
         for m in db.query(Match).filter(Match.user1_id == current_user.id).all()
     }
 
     created_matches = []
-    for sim, candidate_user in top_candidates:
+    for i, item in enumerate(reranked):
+        candidate_user = top_candidates[i][1]
         if candidate_user.id in existing_match_ids:
             continue
 
-        score = round(sim * 100, 1)
-        if score < 5:
+        score = item["score"]
+        # Threshold: 30% after AI reranking
+        if score < 30:
             continue
-
-        # AI reasoning for strong matches (optional, skip if AI unavailable)
-        reasoning = ""
-        if score >= 50:
-            try:
-                cp = candidate_user.profile
-                reasoning = await generate_match_reasoning(
-                    current_user.name,
-                    profile.wants or "",
-                    profile.cans or "",
-                    candidate_user.name,
-                    cp.wants if cp else "",
-                    cp.cans if cp else "",
-                )
-            except Exception:
-                reasoning = "Высокое совпадение интересов и направлений деятельности."
 
         match = Match(
             user1_id=current_user.id,
             user2_id=candidate_user.id,
             score=score,
-            reasoning=reasoning,
+            reasoning=item["reasoning"],
             status="pending",
         )
         db.add(match)

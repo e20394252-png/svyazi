@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
@@ -84,7 +84,7 @@ export default function DashboardPage() {
   function getScoreClass(score: number | null) {
     if (!score) return 'score-low'
     if (score >= 75) return 'score-high'
-    if (score >= 55) return 'score-mid'
+    if (score >= 45) return 'score-mid'
     return 'score-low'
   }
 
