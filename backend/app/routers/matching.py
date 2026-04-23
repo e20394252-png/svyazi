@@ -19,20 +19,24 @@ router = APIRouter(prefix="/api/matches", tags=["matches"])
 
 
 def text_similarity(a: str, b: str) -> float:
-    """Russian keyword cosine similarity — pure Python, no external API"""
-    def tokenize(text: str) -> list:
-        return re.findall(r'[а-яёa-z0-9]+', (text or "").lower())
+    """Russian keyword similarity with basic root/substring matching"""
+    def get_roots(text: str) -> set:
+        tokens = re.findall(r'[а-яёa-z0-9]+', (text or "").lower())
+        # Basic stemming: take first 6 chars for long words to match roots (массаж <-> массажист)
+        # Skip very short common words (<4 chars)
+        return set(w[:6] if len(w) > 5 else w for w in tokens if len(w) > 3)
 
-    a_tokens = Counter(tokenize(a))
-    b_tokens = Counter(tokenize(b))
-    if not a_tokens or not b_tokens:
+    a_roots = get_roots(a)
+    b_roots = get_roots(b)
+    
+    if not a_roots or not b_roots:
         return 0.0
-    dot = sum(a_tokens[t] * b_tokens.get(t, 0) for t in a_tokens)
-    norm_a = math.sqrt(sum(v * v for v in a_tokens.values()))
-    norm_b = math.sqrt(sum(v * v for v in b_tokens.values()))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+        
+    intersection = a_roots.intersection(b_roots)
+    union = a_roots.union(b_roots)
+    
+    # Jaccard index for roots
+    return len(intersection) / len(union) if union else 0.0
 
 
 def build_profile_text_local(profile: MatchProfile, user: User) -> str:
