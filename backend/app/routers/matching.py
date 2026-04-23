@@ -93,7 +93,10 @@ async def find_matches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Run matching for current user (vector similarity or text fallback)"""
+    """Run matching for current user via n8n Webhook"""
+    from app.config import settings
+    import httpx
+    
     profile = current_user.profile
 
     # ── Step 1: ensure profile exists ──────────────────────────────
@@ -130,84 +133,62 @@ async def find_matches(
             profile.wants = ""
             profile.cans = current_user.occupation or current_user.bio or ""
 
-    # ── Step 3: get all candidate profiles ─────────────────────────
-    all_profiles = (
-        db.query(MatchProfile)
-        .filter(MatchProfile.user_id != current_user.id)
-        .options(joinedload(MatchProfile.user))
-        .all()
-    )
+    # ── Step 3: Check webhook config ─────────────────────────
+    if not settings.N8N_MATCHING_WEBHOOK_URL:
+        raise HTTPException(status_code=500, detail="Webhook URL n8n не настроен в конфигурации (N8N_MATCHING_WEBHOOK_URL)")
 
-    # ── Step 4: calculate similarity (vector if possible, text fallback) ──
-    current_text = build_profile_text_local(profile, current_user)
-    use_vectors = bool(profile.embedding)
+    # ── Step 4: Call n8n Webhook ─────────────────────────
+    payload = {
+        "user": get_profile_out(current_user)
+    }
 
-    candidates = []
-    for p in all_profiles:
-        if not p.user or not p.user.is_active:
-            continue
-        # Try vector similarity first
-        if use_vectors and p.embedding:
-            try:
-                emb_a = json.loads(profile.embedding)
-                emb_b = json.loads(p.embedding)
-                sim = cosine_similarity(emb_a, emb_b)
-                candidates.append((sim, p.user))
-                continue
-            except Exception:
-                pass
-        # Fallback: pure text similarity
-        other_text = build_profile_text_local(p, p.user)
-        sim = text_similarity(current_text, other_text)
-        candidates.append((sim, p.user))
+    async with httpx.AsyncClient(timeout=60) as client:
+        try:
+            response = await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="n8n не ответил за 60 секунд")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка вызова n8n: {e}")
 
-    # ── Step 5: sort & take top 20 ─────────────────────────────────
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    top_candidates = candidates[:20]
-
-    # ── Step 6: AI Reranking («Склеивание») ────────────────────────
-    # Format candidates for the reranker
-    rerank_list = []
-    for sim, candidate_user in top_candidates:
-        rerank_list.append({
-            "user": get_profile_out(candidate_user),
-            "orig_sim": sim,
-            "score": round(sim * 100, 1), # Default score if AI fails
-            "reasoning": ""
-        })
+    # ── Step 5: Process n8n response ────────────────────────────
+    # Ожидаемый формат от n8n: {"matches": [{"user_id": 123, "score": 85, "reasoning": "Текст"}]}
+    matches_data = data.get("matches", [])
     
-    user_profile = get_profile_out(current_user)
-    reranked = await rerank_matches(user_profile, rerank_list)
-    
-    # ── Step 7: Filter & Create Matches ────────────────────────────
+    if not matches_data:
+        return {"message": "Подходящих мэтчей пока не найдено."}
+
     existing_match_ids = {
-        m.user2_id
-        for m in db.query(Match).filter(Match.user1_id == current_user.id).all()
+        m.user2_id for m in db.query(Match).filter(Match.user1_id == current_user.id).all()
     }
 
     created_matches = []
-    for i, item in enumerate(reranked):
-        candidate_user = top_candidates[i][1]
-        if candidate_user.id in existing_match_ids:
+    for item in matches_data:
+        uid = item.get("user_id")
+        if not uid or uid == current_user.id or uid in existing_match_ids:
             continue
 
-        score = item["score"]
-        # Threshold: 30% after AI reranking
-        if score < 30:
+        score = float(item.get("score", 0))
+        reasoning = item.get("reasoning", "")
+
+        # Verify target user exists
+        target_user = db.query(User).filter(User.id == uid).first()
+        if not target_user:
             continue
 
         match = Match(
             user1_id=current_user.id,
-            user2_id=candidate_user.id,
+            user2_id=uid,
             score=score,
-            reasoning=item["reasoning"],
+            reasoning=reasoning,
             status="pending",
         )
         db.add(match)
         created_matches.append(match)
 
     db.commit()
-    return {"message": f"Найдено {len(created_matches)} новых совпадений"}
+    return {"message": f"n8n вернул {len(created_matches)} новых совпадений"}
 
 
 @router.get("/top")
