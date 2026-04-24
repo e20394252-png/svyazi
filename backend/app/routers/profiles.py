@@ -81,31 +81,39 @@ def update_my_profile(
     db.commit()
     db.refresh(current_user)
 
-    # ── Отправляем профиль в n8n (синхронно в фоне) ──────
+    # ── Отправляем профиль в n8n (в фоновом потоке) ───────
     from app.config import settings
-    if settings.N8N_PROFILE_WEBHOOK_URL:
+    webhook_url = settings.N8N_PROFILE_WEBHOOK_URL
+    user_id = current_user.id
+    print(f"DEBUG: Profile save for user {user_id}, webhook_url={webhook_url}")
+
+    if webhook_url:
         import httpx
         import threading
 
-        # Только поля, нужные для мэтчинга в Data Table
+        # Захватываем ВСЕ данные до создания потока (thread-safe)
         profile_data = {
-            "name": current_user.name,
+            "name": current_user.name or "",
             "telegram": current_user.telegram or "",
             "phone": current_user.phone or "",
             "occupation": current_user.occupation or "",
             "wants": profile.wants or "",
             "cans": profile.cans or "",
         }
+        print(f"DEBUG: Sending to n8n: {profile_data}")
 
         def _sync_to_n8n():
             try:
+                print(f"DEBUG: Thread started, posting to {webhook_url}")
                 with httpx.Client(timeout=15.0) as client:
-                    resp = client.post(settings.N8N_PROFILE_WEBHOOK_URL, json=profile_data)
-                    print(f"DEBUG: Profile synced to n8n for user {current_user.id}, status={resp.status_code}")
+                    resp = client.post(webhook_url, json=profile_data)
+                    print(f"DEBUG: n8n response: status={resp.status_code}, body={resp.text[:200]}")
             except Exception as e:
                 print(f"DEBUG: Failed to sync profile to n8n: {e}")
 
         threading.Thread(target=_sync_to_n8n, daemon=True).start()
+    else:
+        print("DEBUG: N8N_PROFILE_WEBHOOK_URL is not set, skipping sync")
 
     return build_profile_out(current_user)
 
