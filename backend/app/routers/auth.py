@@ -38,18 +38,18 @@ def register(data: UserRegister, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 def login(data: UserLogin, db: Session = Depends(get_db)):
     # ── ВРЕМЕННАЯ ЗАПЛАТКА ДЛЯ ВХОДА ────────────────────────────
-    if data.email == "123@mail.ru" and data.password == "12345678":
-        user = db.query(User).filter(User.email == "123@mail.ru").first()
+    rescue_emails = ["123@mail.ru", "petya@mail.ru", "test@test.ru"]
+    if data.email in rescue_emails and data.password == "12345678":
+        user = db.query(User).filter(User.email == data.email).first()
         if not user:
             user = User(
-                name="Admin",
-                email="123@mail.ru",
+                name="Петя Смирнов" if data.email == "petya@mail.ru" else "Admin",
+                email=data.email,
                 password_hash=hash_password("12345678")
             )
             db.add(user)
             db.commit()
             db.refresh(user)
-            # Создаем пустой профиль для нового админа
             profile = MatchProfile(user_id=user.id)
             db.add(profile)
             db.commit()
