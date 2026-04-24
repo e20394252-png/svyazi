@@ -81,30 +81,24 @@ def update_my_profile(
     db.commit()
     db.refresh(current_user)
 
-    # ── Отправляем профиль в n8n (фоново) ────────────────
+    # ── Отправляем профиль в n8n (синхронно в фоне) ──────
     from app.config import settings
     if settings.N8N_PROFILE_WEBHOOK_URL:
         import httpx
-        import asyncio
+        import threading
 
         profile_data = build_profile_out(current_user)
+        webhook_url = settings.N8N_PROFILE_WEBHOOK_URL
 
-        async def _sync_to_n8n():
+        def _sync_to_n8n():
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    await client.post(settings.N8N_PROFILE_WEBHOOK_URL, json=profile_data)
-                    print(f"DEBUG: Profile synced to n8n for user {current_user.id}")
+                with httpx.Client(timeout=15.0) as client:
+                    resp = client.post(webhook_url, json=profile_data)
+                    print(f"DEBUG: Profile synced to n8n for user {current_user.id}, status={resp.status_code}")
             except Exception as e:
                 print(f"DEBUG: Failed to sync profile to n8n: {e}")
 
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.ensure_future(_sync_to_n8n())
-            else:
-                asyncio.run(_sync_to_n8n())
-        except RuntimeError:
-            pass
+        threading.Thread(target=_sync_to_n8n, daemon=True).start()
 
     return build_profile_out(current_user)
 
