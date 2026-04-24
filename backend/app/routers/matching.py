@@ -116,16 +116,31 @@ async def find_matches(
         "user": get_profile_out(current_user)
     }
 
-    # ── Вызываем n8n и ЖДЁМ ответ (до 5 минут) ────────────────
-    try:
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
-            response.raise_for_status()
-            data = response.json()
-    except httpx.TimeoutException:
-        return {"message": "n8n не ответил за 5 минут. Попробуйте позже или уменьшите количество кандидатов."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка вызова n8n: {e}")
+    # ── Вызываем n8n и ЖДЁМ ответ (до 5 минут, с ретраями) ─────
+    import asyncio as aio
+    data = None
+    last_error = None
+    max_retries = 3
+
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"DEBUG: n8n attempt {attempt}/{max_retries}")
+                response = await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                break  # Успех — выходим из цикла
+            except httpx.TimeoutException:
+                last_error = "n8n не ответил за 5 минут"
+                break  # Таймаут — не ретраим
+            except Exception as e:
+                last_error = str(e)
+                print(f"DEBUG: n8n attempt {attempt} failed: {e}")
+                if attempt < max_retries:
+                    await aio.sleep(5 * attempt)  # 5с, 10с, 15с
+
+    if data is None:
+        return {"message": f"n8n недоступен после {max_retries} попыток: {last_error}"}
 
     # ── Парсим ответ ──────────────────────────────────────────
     import json as json_lib
