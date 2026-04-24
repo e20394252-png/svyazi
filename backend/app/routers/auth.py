@@ -38,12 +38,12 @@ def register(data: UserRegister, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 def login(data: UserLogin, db: Session = Depends(get_db)):
     # ── Админский логин ──────────────────────────────────────
-    if data.email == "admin" and data.password == "admin123":
-        user = db.query(User).filter(User.email == "admin").first()
+    if data.email == "admin@admin.com" and data.password == "admin123":
+        user = db.query(User).filter(User.email == "admin@admin.com").first()
         if not user:
             user = User(
                 name="Администратор",
-                email="admin",
+                email="admin@admin.com",
                 password_hash=hash_password("admin123"),
                 is_admin=True,
             )

@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './page.module.css'
@@ -50,7 +50,7 @@ export default function LandingPage() {
 
           <p className={styles.heroSubtitle}>
             Расскажи, что ты ищешь, что умеешь и что имеешь — 
-            и ИИ сам найдёт тех, кто тебе подходит из сообщества 666+ нетворкеров
+            и ИИ сам найдёт тех, кто тебе подходит из сообщества 1000+ нетворкеров
           </p>
 
           <div className={styles.ctaGroup}>
@@ -71,7 +71,7 @@ export default function LandingPage() {
           {/* Stats */}
           <div className={styles.stats}>
             <div className={styles.stat}>
-              <span className={styles.statNum}>666+</span>
+              <span className={styles.statNum}>1000+</span>
               <span className={styles.statLabel}>нетворкеров</span>
             </div>
             <div className={styles.statDivider} />
@@ -142,7 +142,7 @@ export default function LandingPage() {
       <footer className={styles.footer}>
         <span className="gradient-text" style={{ fontWeight: 700 }}>Связи</span>
         <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-          Нетворкинг + ИИ мэтчинг © 2024
+          Нетворкинг + ИИ мэтчинг © 2026
         </span>
       </footer>
     </div>

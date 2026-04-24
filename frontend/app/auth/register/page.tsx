@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
@@ -48,7 +48,7 @@ export default function RegisterPage() {
         </Link>
 
         <h1 className={styles.title}>Создать аккаунт</h1>
-        <p className={styles.subtitle}>Присоединяйся к 666+ нетворкерам</p>
+        <p className={styles.subtitle}>Присоединяйся к 1000+ нетворкерам</p>
 
         {error && <div className="alert alert-error">{error}</div>}
 
