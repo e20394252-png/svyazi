@@ -184,6 +184,7 @@ async def find_matches(
         bg_db = SessionLocal()
         try:
             saved = 0
+            skipped = 0
             for item in matches_data:
                 tg_handle = item.get("telegram", "").replace("@", "").strip()
                 try:
@@ -192,11 +193,27 @@ async def find_matches(
                     score = 0
                 reasoning = item.get("reasoning", "")
 
+                # ── Фильтр качества: минимальный порог 30% ────
+                if score < 30:
+                    skipped += 1
+                    continue
+
                 target_user = None
                 if tg_handle:
                     target_user = bg_db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
 
                 if not target_user or target_user.id == user_id:
+                    continue
+
+                # ── Фильтр: пропускаем кандидатов с пустым профилем ──
+                tp = target_user.profile
+                has_content = (
+                    (tp and tp.wants and tp.wants.strip())
+                    or (tp and tp.cans and tp.cans.strip())
+                    or (target_user.occupation and target_user.occupation.strip())
+                )
+                if not has_content:
+                    skipped += 1
                     continue
 
                 new_match = Match(
@@ -210,7 +227,7 @@ async def find_matches(
                 saved += 1
 
             bg_db.commit()
-            print(f"DEBUG: Saved {saved} matches for user {user_id}")
+            print(f"DEBUG: Saved {saved} matches, skipped {skipped} for user {user_id}")
         except Exception as e:
             bg_db.rollback()
             print(f"DEBUG: DB error saving matches: {e}")
