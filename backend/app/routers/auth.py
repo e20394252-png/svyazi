@@ -37,26 +37,28 @@ def register(data: UserRegister, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 def login(data: UserLogin, db: Session = Depends(get_db)):
-    # ── ВРЕМЕННАЯ ЗАПЛАТКА ДЛЯ ВХОДА ────────────────────────────
-    rescue_emails = ["123@mail.ru", "petya@mail.ru", "test@test.ru"]
-    if data.email in rescue_emails and data.password == "12345678":
-        user = db.query(User).filter(User.email == data.email).first()
+    # ── Админский логин ──────────────────────────────────────
+    if data.email == "admin" and data.password == "admin123":
+        user = db.query(User).filter(User.email == "admin").first()
         if not user:
             user = User(
-                name="Петя Смирнов" if data.email == "petya@mail.ru" else "Admin",
-                email=data.email,
-                password_hash=hash_password("12345678")
+                name="Администратор",
+                email="admin",
+                password_hash=hash_password("admin123"),
+                is_admin=True,
             )
             db.add(user)
-            db.commit()
-            db.refresh(user)
+            db.flush()
             profile = MatchProfile(user_id=user.id)
             db.add(profile)
             db.commit()
-        else:
-            user.password_hash = hash_password("12345678")
+            db.refresh(user)
+        elif not user.is_admin:
+            user.is_admin = True
             db.commit()
-    # ────────────────────────────────────────────────────────────
+        token = create_access_token(user.id)
+        return Token(access_token=token)
+    # ────────────────────────────────────────────────────────
 
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not verify_password(data.password, user.password_hash):

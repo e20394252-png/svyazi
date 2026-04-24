@@ -37,6 +37,7 @@ def build_profile_out(user: User) -> dict:
         "wants_tags": profile.wants_tags if profile else [],
         "cans_tags": profile.cans_tags if profile else [],
         "has_tags": profile.has_tags if profile else [],
+        "is_admin": user.is_admin if hasattr(user, 'is_admin') else False,
         "created_at": user.created_at,
     }
 
@@ -79,6 +80,32 @@ def update_my_profile(
 
     db.commit()
     db.refresh(current_user)
+
+    # ── Отправляем профиль в n8n (фоново) ────────────────
+    from app.config import settings
+    if settings.N8N_PROFILE_WEBHOOK_URL:
+        import httpx
+        import asyncio
+
+        profile_data = build_profile_out(current_user)
+
+        async def _sync_to_n8n():
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    await client.post(settings.N8N_PROFILE_WEBHOOK_URL, json=profile_data)
+                    print(f"DEBUG: Profile synced to n8n for user {current_user.id}")
+            except Exception as e:
+                print(f"DEBUG: Failed to sync profile to n8n: {e}")
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(_sync_to_n8n())
+            else:
+                asyncio.run(_sync_to_n8n())
+        except RuntimeError:
+            pass
+
     return build_profile_out(current_user)
 
 

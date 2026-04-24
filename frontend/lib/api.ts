@@ -58,4 +58,8 @@ export const api = {
   sendMessage: (userId: number, content: string) =>
     apiFetch(`/api/chat/${userId}`, { method: 'POST', body: JSON.stringify({ content }) }),
   getConversations: () => apiFetch('/api/chat/conversations/list'),
+
+  // Admin
+  getAdminSettings: () => apiFetch('/api/admin/settings'),
+  updateAdminSettings: (data: any) => apiFetch('/api/admin/settings', { method: 'POST', body: JSON.stringify(data) }),
 };

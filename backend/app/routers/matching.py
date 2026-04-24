@@ -97,15 +97,33 @@ async def find_matches(
     """Запуск поиска мэтчей — мгновенный ответ, работа в фоне"""
     from app.config import settings
 
-    # Ensure profile exists
+    # ── Проверяем заполненность профиля ───────────────────
     profile = current_user.profile
+    has_profile = (
+        (profile and profile.wants and profile.wants.strip())
+        or (profile and profile.cans and profile.cans.strip())
+        or (profile and profile.has_items and profile.has_items.strip())
+        or (current_user.occupation and current_user.occupation.strip())
+    )
+    if not has_profile:
+        raise HTTPException(
+            status_code=400,
+            detail="Сначала заполните профиль: укажите что вы хотите, можете или имеете"
+        )
+
     if not profile:
         profile = MatchProfile(user_id=current_user.id)
         db.add(profile)
         db.commit()
 
-    if not settings.N8N_MATCHING_WEBHOOK_URL:
-        raise HTTPException(status_code=500, detail="Webhook URL n8n не настроен")
+    # ── Выбираем вебхук в зависимости от активной базы ────
+    if settings.ACTIVE_DATABASE == "new":
+        webhook_url = settings.N8N_MATCHING_WEBHOOK_URL_NEW
+    else:
+        webhook_url = settings.N8N_MATCHING_WEBHOOK_URL
+
+    if not webhook_url:
+        raise HTTPException(status_code=500, detail="Webhook URL n8n не настроен для выбранной базы")
 
     # Очищаем старые мэтчи
     db.query(Match).filter(Match.user1_id == current_user.id).delete()
@@ -114,7 +132,6 @@ async def find_matches(
     # Собираем данные для отправки
     user_id = current_user.id
     payload = {"user": get_profile_out(current_user)}
-    webhook_url = settings.N8N_MATCHING_WEBHOOK_URL
 
     # ── Фоновая задача: вызвать n8n → дождаться ответа → сохранить ──
     async def _background_matching():

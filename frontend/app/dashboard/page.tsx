@@ -55,7 +55,16 @@ export default function DashboardPage() {
     loadMatches()
   }, [loadMatches, router])
 
+  const profileFilled = !!(
+    profile?.wants?.trim() || profile?.cans?.trim() ||
+    profile?.has_items?.trim() || profile?.occupation?.trim()
+  )
+
   async function handleFindMatches() {
+    if (!profileFilled) {
+      setMessage('Сначала заполните профиль: укажите что вы хотите, можете или имеете')
+      return
+    }
     setFinding(true)
     setMessage('')
     try {

@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { useRouter, usePathname } from 'next/navigation'
 import styles from './Navbar.module.css'
 
@@ -20,6 +20,7 @@ export default function Navbar({ profile }: { profile: any }) {
     { href: '/dashboard', icon: '⚡', label: 'Мэтчи' },
     { href: '/profile', icon: '👤', label: 'Профиль' },
     { href: '/chat', icon: '💬', label: 'Чат' },
+    ...(profile?.is_admin ? [{ href: '/admin', icon: '⚙️', label: 'Админ' }] : []),
   ]
 
   return (

@@ -26,6 +26,20 @@ app.include_router(admin.router)
 @app.on_event("startup")
 def on_startup():
     init_db()
+    # Auto-migrate: add is_admin column if it doesn't exist
+    from app.database import SessionLocal
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        db.execute(text("""
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE
+        """))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Migration note: {e}")
+    finally:
+        db.close()
 
 
 @app.get("/health")

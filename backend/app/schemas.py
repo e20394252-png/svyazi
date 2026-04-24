@@ -51,6 +51,7 @@ class ProfileOut(BaseModel):
     wants_tags: Optional[List[str]] = []
     cans_tags: Optional[List[str]] = []
     has_tags: Optional[List[str]] = []
+    is_admin: bool = False
     created_at: datetime
 
     class Config:
