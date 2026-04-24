@@ -94,63 +94,27 @@ async def find_matches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Run matching for current user via n8n Webhook"""
+    """Триггер для запуска поиска мэтчей в n8n (Асинхронно)"""
     from app.config import settings
     import httpx
-    
-    profile = current_user.profile
 
-    # ── Step 1: ensure profile exists ──────────────────────────────
+    # Ensure profile exists
+    profile = current_user.profile
     if not profile:
         profile = MatchProfile(user_id=current_user.id)
         db.add(profile)
-        db.flush()
+        db.commit()
 
-    # ── Step 2: AI analysis (optional — proceed even if it fails) ──
-    if not profile.wants and not profile.cans:
-        text = current_user.bio or current_user.occupation or ""
-        if not text:
-            raise HTTPException(
-                status_code=400,
-                detail="Заполните профиль: укажите чем занимаетесь и что ищете"
-            )
-        try:
-            parsed = await analyze_occupation(text)
-            profile.wants = parsed["wants"]
-            profile.cans = parsed["cans"]
-            profile.has_items = parsed["has"]
-            try:
-                profile.wants_tags = await extract_tags(parsed["wants"])
-                profile.cans_tags = await extract_tags(parsed["cans"])
-                profile.has_tags = await extract_tags(parsed["has"])
-            except Exception:
-                pass  # tags are optional
-            db.commit()
-            db.refresh(current_user)
-            profile = current_user.profile
-        except Exception:
-            db.rollback()
-            # AI failed — do text matching on raw occupation text
-            profile.wants = ""
-            profile.cans = current_user.occupation or current_user.bio or ""
-
-    # ── Step 3: Check webhook config ─────────────────────────
     if not settings.N8N_MATCHING_WEBHOOK_URL:
         raise HTTPException(status_code=500, detail="Webhook URL n8n не настроен в конфигурации (N8N_MATCHING_WEBHOOK_URL)")
 
-@router.post("/find")
-async def find_matches(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Триггер для запуска поиска мэтчей в n8n (Асинхронно)"""
     # Очищаем старые мэтчи СРАЗУ при запуске нового поиска
     db.query(Match).filter(Match.user1_id == current_user.id).delete()
     db.commit()
 
     payload = {
         "user": get_profile_out(current_user),
-        "callback_url": f"{settings.BACKEND_URL}/matching/callback?user_id={current_user.id}"
+        "callback_url": f"{settings.BACKEND_URL}/api/matches/callback?user_id={current_user.id}"
     }
 
     async def trigger_n8n():
@@ -160,7 +124,6 @@ async def find_matches(
             except Exception as e:
                 print(f"DEBUG: Failed to trigger n8n: {e}")
 
-    import asyncio
     asyncio.create_task(trigger_n8n())
 
     return {"message": "Поиск запущен! Старые мэтчи удалены. Новые появятся здесь в течение 1-2 минут."}
