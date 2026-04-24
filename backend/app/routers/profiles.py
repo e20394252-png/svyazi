@@ -87,13 +87,20 @@ def update_my_profile(
         import httpx
         import threading
 
-        profile_data = build_profile_out(current_user)
-        webhook_url = settings.N8N_PROFILE_WEBHOOK_URL
+        # Только поля, нужные для мэтчинга в Data Table
+        profile_data = {
+            "name": current_user.name,
+            "telegram": current_user.telegram or "",
+            "phone": current_user.phone or "",
+            "occupation": current_user.occupation or "",
+            "wants": profile.wants or "",
+            "cans": profile.cans or "",
+        }
 
         def _sync_to_n8n():
             try:
                 with httpx.Client(timeout=15.0) as client:
-                    resp = client.post(webhook_url, json=profile_data)
+                    resp = client.post(settings.N8N_PROFILE_WEBHOOK_URL, json=profile_data)
                     print(f"DEBUG: Profile synced to n8n for user {current_user.id}, status={resp.status_code}")
             except Exception as e:
                 print(f"DEBUG: Failed to sync profile to n8n: {e}")
