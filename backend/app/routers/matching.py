@@ -94,7 +94,7 @@ async def find_matches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Триггер для запуска поиска мэтчей в n8n (Асинхронно)"""
+    """Синхронный поиск мэтчей через n8n — ждём ответ и сохраняем"""
     from app.config import settings
     import httpx
 
@@ -106,90 +106,90 @@ async def find_matches(
         db.commit()
 
     if not settings.N8N_MATCHING_WEBHOOK_URL:
-        raise HTTPException(status_code=500, detail="Webhook URL n8n не настроен в конфигурации (N8N_MATCHING_WEBHOOK_URL)")
+        raise HTTPException(status_code=500, detail="Webhook URL n8n не настроен")
 
-    # Очищаем старые мэтчи СРАЗУ при запуске нового поиска
+    # Очищаем старые мэтчи
     db.query(Match).filter(Match.user1_id == current_user.id).delete()
     db.commit()
 
     payload = {
-        "user": get_profile_out(current_user),
-        "callback_url": f"{settings.BACKEND_URL}/api/matches/callback?user_id={current_user.id}"
+        "user": get_profile_out(current_user)
     }
 
-    async def trigger_n8n():
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            try:
-                await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
-            except Exception as e:
-                print(f"DEBUG: Failed to trigger n8n: {e}")
+    # ── Вызываем n8n и ЖДЁМ ответ (до 5 минут) ────────────────
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
+            response.raise_for_status()
+            data = response.json()
+    except httpx.TimeoutException:
+        return {"message": "n8n не ответил за 5 минут. Попробуйте позже или уменьшите количество кандидатов."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка вызова n8n: {e}")
 
-    asyncio.create_task(trigger_n8n())
-
-    return {"message": "Поиск запущен! Старые мэтчи удалены. Новые появятся здесь в течение 1-2 минут."}
-
-
-@router.post("/callback")
-async def matching_callback(
-    user_id: int,
-    data: Any = Body(...),
-    db: Session = Depends(get_db),
-):
-    """Прием результатов от n8n"""
-    # ── Процесс парсинга ────────────────────────────────────────
-    import json
+    # ── Парсим ответ ──────────────────────────────────────────
+    import json as json_lib
     matches_data = []
-    
+
     def extract_matches(item):
         if not isinstance(item, dict): return []
-        if "telegram" in item: return [item]
+        if "telegram" in item and "score" in item: return [item]
         if "user_id" in item and "score" in item: return [item]
         if "choices" in item:
             try:
                 content = item["choices"][0]["message"]["content"]
-                clean_content = content.replace("```json", "").replace("```", "").strip()
-                parsed = json.loads(clean_content)
+                clean = content.replace("```json", "").replace("```", "").strip()
+                parsed = json_lib.loads(clean)
                 if isinstance(parsed, dict):
                     res = parsed.get("matches", [])
                     return res if isinstance(res, list) else [res]
                 elif isinstance(parsed, list):
                     return parsed
-            except Exception: pass
+            except Exception:
+                pass
+        if "matches" in item:
+            m = item["matches"]
+            return m if isinstance(m, list) else [m]
         return []
 
     if isinstance(data, list):
-        for entry in data: matches_data.extend(extract_matches(entry))
+        for entry in data:
+            matches_data.extend(extract_matches(entry))
     elif isinstance(data, dict):
-        matches_data = data.get("matches", []) if "matches" in data else extract_matches(data)
+        matches_data = extract_matches(data)
 
-    # ── Сохранение ──────────────────────────────────────────────
-    processed_count = 0
+    print(f"DEBUG: Extracted {len(matches_data)} matches from n8n response")
+
+    # ── Сохраняем мэтчи ──────────────────────────────────────
+    saved = 0
     for item in matches_data:
         tg_handle = item.get("telegram", "").replace("@", "").strip()
-        score = float(item.get("score", 0))
+        try:
+            score = float(item.get("score", 0))
+        except (ValueError, TypeError):
+            score = 0
         reasoning = item.get("reasoning", "")
-        
+
         target_user = None
         if tg_handle:
             target_user = db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
-        
-        if not target_user or target_user.id == user_id:
+
+        if not target_user or target_user.id == current_user.id:
             continue
-            
-        # Добавляем мэтч (без удаления, так как удалили в /find)
+
         new_match = Match(
-            user1_id=user_id,
+            user1_id=current_user.id,
             user2_id=target_user.id,
             score=score,
             reasoning=reasoning,
             status="pending"
         )
         db.add(new_match)
-        processed_count += 1
-    
+        saved += 1
+
     db.commit()
-    print(f"DEBUG CALLBACK: Added {processed_count} matches for user {user_id}")
-    return {"status": "success", "added": processed_count}
+    print(f"DEBUG: Saved {saved} matches for user {current_user.id}")
+    return {"message": f"Найдено и сохранено мэтчей: {saved}"}
 
 
 @router.get("/top")
