@@ -94,9 +94,8 @@ async def find_matches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Синхронный поиск мэтчей через n8n — ждём ответ и сохраняем"""
+    """Запуск поиска мэтчей — мгновенный ответ, работа в фоне"""
     from app.config import settings
-    import httpx
 
     # Ensure profile exists
     profile = current_user.profile
@@ -112,99 +111,115 @@ async def find_matches(
     db.query(Match).filter(Match.user1_id == current_user.id).delete()
     db.commit()
 
-    payload = {
-        "user": get_profile_out(current_user)
-    }
+    # Собираем данные для отправки
+    user_id = current_user.id
+    payload = {"user": get_profile_out(current_user)}
+    webhook_url = settings.N8N_MATCHING_WEBHOOK_URL
 
-    # ── Вызываем n8n и ЖДЁМ ответ (до 5 минут, с ретраями) ─────
-    import asyncio as aio
-    data = None
-    last_error = None
-    max_retries = 3
+    # ── Фоновая задача: вызвать n8n → дождаться ответа → сохранить ──
+    async def _background_matching():
+        import httpx
+        import json as json_lib
+        from app.database import SessionLocal
 
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        for attempt in range(1, max_retries + 1):
-            try:
-                print(f"DEBUG: n8n attempt {attempt}/{max_retries}")
-                response = await client.post(settings.N8N_MATCHING_WEBHOOK_URL, json=payload)
-                response.raise_for_status()
-                data = response.json()
-                break  # Успех — выходим из цикла
-            except httpx.TimeoutException:
-                last_error = "n8n не ответил за 5 минут"
-                break  # Таймаут — не ретраим
-            except Exception as e:
-                last_error = str(e)
-                print(f"DEBUG: n8n attempt {attempt} failed: {e}")
-                if attempt < max_retries:
-                    await aio.sleep(5 * attempt)  # 5с, 10с, 15с
+        data = None
+        last_error = None
 
-    if data is None:
-        return {"message": f"n8n недоступен после {max_retries} попыток: {last_error}"}
+        # Ретрай до 3 раз
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            for attempt in range(1, 4):
+                try:
+                    print(f"DEBUG: n8n attempt {attempt}/3 for user {user_id}")
+                    response = await client.post(webhook_url, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    print(f"DEBUG: n8n responded OK for user {user_id}")
+                    break
+                except httpx.TimeoutException:
+                    print(f"DEBUG: n8n timeout for user {user_id}")
+                    break
+                except Exception as e:
+                    last_error = str(e)
+                    print(f"DEBUG: n8n attempt {attempt} failed: {e}")
+                    if attempt < 3:
+                        await asyncio.sleep(5 * attempt)
 
-    # ── Парсим ответ ──────────────────────────────────────────
-    import json as json_lib
-    matches_data = []
+        if data is None:
+            print(f"DEBUG: n8n failed for user {user_id}: {last_error}")
+            return
 
-    def extract_matches(item):
-        if not isinstance(item, dict): return []
-        if "telegram" in item and "score" in item: return [item]
-        if "user_id" in item and "score" in item: return [item]
-        if "choices" in item:
-            try:
-                content = item["choices"][0]["message"]["content"]
-                clean = content.replace("```json", "").replace("```", "").strip()
-                parsed = json_lib.loads(clean)
-                if isinstance(parsed, dict):
-                    res = parsed.get("matches", [])
-                    return res if isinstance(res, list) else [res]
-                elif isinstance(parsed, list):
-                    return parsed
-            except Exception:
-                pass
-        if "matches" in item:
-            m = item["matches"]
-            return m if isinstance(m, list) else [m]
-        return []
+        # ── Парсим ответ ──────────────────────────────────────
+        matches_data = []
 
-    if isinstance(data, list):
-        for entry in data:
-            matches_data.extend(extract_matches(entry))
-    elif isinstance(data, dict):
-        matches_data = extract_matches(data)
+        def extract_matches(item):
+            if not isinstance(item, dict): return []
+            if "telegram" in item and "score" in item: return [item]
+            if "user_id" in item and "score" in item: return [item]
+            if "choices" in item:
+                try:
+                    content = item["choices"][0]["message"]["content"]
+                    clean = content.replace("```json", "").replace("```", "").strip()
+                    parsed = json_lib.loads(clean)
+                    if isinstance(parsed, dict):
+                        res = parsed.get("matches", [])
+                        return res if isinstance(res, list) else [res]
+                    elif isinstance(parsed, list):
+                        return parsed
+                except Exception:
+                    pass
+            if "matches" in item:
+                m = item["matches"]
+                return m if isinstance(m, list) else [m]
+            return []
 
-    print(f"DEBUG: Extracted {len(matches_data)} matches from n8n response")
+        if isinstance(data, list):
+            for entry in data:
+                matches_data.extend(extract_matches(entry))
+        elif isinstance(data, dict):
+            matches_data = extract_matches(data)
 
-    # ── Сохраняем мэтчи ──────────────────────────────────────
-    saved = 0
-    for item in matches_data:
-        tg_handle = item.get("telegram", "").replace("@", "").strip()
+        print(f"DEBUG: Extracted {len(matches_data)} match items for user {user_id}")
+
+        # ── Сохраняем в базу (новая сессия!) ─────────────────
+        bg_db = SessionLocal()
         try:
-            score = float(item.get("score", 0))
-        except (ValueError, TypeError):
-            score = 0
-        reasoning = item.get("reasoning", "")
+            saved = 0
+            for item in matches_data:
+                tg_handle = item.get("telegram", "").replace("@", "").strip()
+                try:
+                    score = float(item.get("score", 0))
+                except (ValueError, TypeError):
+                    score = 0
+                reasoning = item.get("reasoning", "")
 
-        target_user = None
-        if tg_handle:
-            target_user = db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
+                target_user = None
+                if tg_handle:
+                    target_user = bg_db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
 
-        if not target_user or target_user.id == current_user.id:
-            continue
+                if not target_user or target_user.id == user_id:
+                    continue
 
-        new_match = Match(
-            user1_id=current_user.id,
-            user2_id=target_user.id,
-            score=score,
-            reasoning=reasoning,
-            status="pending"
-        )
-        db.add(new_match)
-        saved += 1
+                new_match = Match(
+                    user1_id=user_id,
+                    user2_id=target_user.id,
+                    score=score,
+                    reasoning=reasoning,
+                    status="pending"
+                )
+                bg_db.add(new_match)
+                saved += 1
 
-    db.commit()
-    print(f"DEBUG: Saved {saved} matches for user {current_user.id}")
-    return {"message": f"Найдено и сохранено мэтчей: {saved}"}
+            bg_db.commit()
+            print(f"DEBUG: Saved {saved} matches for user {user_id}")
+        except Exception as e:
+            bg_db.rollback()
+            print(f"DEBUG: DB error saving matches: {e}")
+        finally:
+            bg_db.close()
+
+    # Запускаем фоновую задачу и СРАЗУ отвечаем
+    asyncio.create_task(_background_matching())
+    return {"message": "Поиск запущен! Мэтчи появятся в течение 1-2 минут. Обновите страницу."}
 
 
 @router.get("/top")
