@@ -28,6 +28,7 @@ def run_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT UNIQUE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS wants_tags JSONB DEFAULT '[]'::jsonb",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS cans_tags JSONB DEFAULT '[]'::jsonb",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS has_tags JSONB DEFAULT '[]'::jsonb",

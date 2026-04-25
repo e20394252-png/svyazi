@@ -102,7 +102,8 @@ export default function AdminPage() {
                   <th style={thStyle}>Telegram</th>
                   <th style={thStyle}>Email</th>
                   <th style={thStyle}>Вход</th>
-                  <th style={thStyle}>Дата</th>
+                  <th style={thStyle}>Регистрация</th>
+                  <th style={thStyle}>Посл. вход</th>
                 </tr>
               </thead>
               <tbody>
@@ -171,6 +172,15 @@ export default function AdminPage() {
                       <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                         {formatDate(u.created_at)}
                       </span>
+                    </td>
+                    <td style={tdStyle}>
+                      {u.last_login_at ? (
+                        <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 500 }}>
+                          {formatDate(u.last_login_at)}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
+                      )}
                     </td>
                   </tr>
                 ))}

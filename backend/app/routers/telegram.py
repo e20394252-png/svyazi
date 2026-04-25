@@ -190,6 +190,7 @@ def telegram_auth_check(code: str, db: Session = Depends(get_db)):
         profile = MatchProfile(user_id=user.id)
         db.add(profile)
 
+    user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
 

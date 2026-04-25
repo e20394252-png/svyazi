@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -31,6 +32,9 @@ def register(data: UserRegister, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+
     token = create_access_token(user.id)
     return Token(access_token=token)
 
@@ -55,7 +59,8 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
             db.refresh(user)
         elif not user.is_admin:
             user.is_admin = True
-            db.commit()
+        user.last_login_at = datetime.now(timezone.utc)
+        db.commit()
         token = create_access_token(user.id)
         return Token(access_token=token)
     # ────────────────────────────────────────────────────────
@@ -63,6 +68,9 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Неверный email или пароль")
+
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
 
     token = create_access_token(user.id)
     return Token(access_token=token)

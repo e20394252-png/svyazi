@@ -60,6 +60,7 @@ def get_admin_users(
             "auth_method": "telegram" if (hasattr(u, 'telegram_id') and u.telegram_id) else "email",
             "is_admin": u.is_admin,
             "created_at": u.created_at.isoformat() if u.created_at else None,
+            "last_login_at": u.last_login_at.isoformat() if (hasattr(u, 'last_login_at') and u.last_login_at) else None,
         }
         for u in users
     ]
