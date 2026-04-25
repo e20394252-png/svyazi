@@ -36,6 +36,10 @@ export const api = {
   register: (data: any) => apiFetch('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: any) => apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
 
+  // Telegram Auth
+  telegramInit: () => apiFetch('/api/auth/telegram/init', { method: 'POST' }),
+  telegramCheck: (code: string) => apiFetch(`/api/auth/telegram/check?code=${code}`),
+
   // Profile
   getMyProfile: () => apiFetch('/api/profiles/me'),
   getProfile: (id: number) => apiFetch(`/api/profiles/${id}`),

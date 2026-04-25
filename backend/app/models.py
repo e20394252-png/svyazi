@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey, DateTime, Boolean, Enum
+from sqlalchemy import Column, Integer, BigInteger, String, Text, Float, ForeignKey, DateTime, Boolean, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -25,6 +25,7 @@ class User(Base):
     email = Column(String(200), unique=True, index=True, nullable=False)
     password_hash = Column(String(200), nullable=False)
     telegram = Column(String(100), nullable=True)
+    telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
     phone = Column(String(50), nullable=True)
     occupation = Column(Text, nullable=True)
     bio = Column(Text, nullable=True)
@@ -99,3 +100,16 @@ class Message(Base):
 
     sender = relationship("User", foreign_keys=[sender_id], back_populates="sent_messages")
     receiver = relationship("User", foreign_keys=[receiver_id], back_populates="received_messages")
+
+
+class TelegramAuthCode(Base):
+    __tablename__ = "telegram_auth_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(20), unique=True, index=True, nullable=False)
+    telegram_id = Column(BigInteger, nullable=True)
+    telegram_username = Column(String(200), nullable=True)
+    telegram_name = Column(String(200), nullable=True)
+    confirmed = Column(Boolean, default=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

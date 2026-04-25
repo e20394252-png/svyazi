@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEYS: str = ""  # comma-separated list of fallback Gemini API keys
     CORS_ORIGINS: str = "http://localhost:3000"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_USERNAME: str = "matchig_auth_bot"
 
     class Config:
         env_file = ".env"

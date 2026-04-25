@@ -27,11 +27,23 @@ def run_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT UNIQUE",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS wants_tags JSONB DEFAULT '[]'::jsonb",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS cans_tags JSONB DEFAULT '[]'::jsonb",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS has_tags JSONB DEFAULT '[]'::jsonb",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE match_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
+        """CREATE TABLE IF NOT EXISTS telegram_auth_codes (
+            id SERIAL PRIMARY KEY,
+            code VARCHAR(20) UNIQUE NOT NULL,
+            telegram_id BIGINT,
+            telegram_username VARCHAR(200),
+            telegram_name VARCHAR(200),
+            confirmed BOOLEAN DEFAULT FALSE,
+            used BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_telegram_auth_codes_code ON telegram_auth_codes(code)",
     ]
     with engine.connect() as conn:
         for sql in migrations:
