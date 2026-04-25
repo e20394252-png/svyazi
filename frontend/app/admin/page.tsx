@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
 import Navbar from '@/components/Navbar'
 
+const PAGE_SIZE = 20
+
 export default function AdminPage() {
   const router = useRouter()
   const [profile, setProfile] = useState<any>(null)
@@ -12,6 +14,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -59,6 +62,8 @@ export default function AdminPage() {
 
   const tgUsers = users.filter(u => u.auth_method === 'telegram')
   const emailUsers = users.filter(u => u.auth_method === 'email')
+  const totalPages = Math.ceil(users.length / PAGE_SIZE)
+  const pageUsers = users.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div>
@@ -73,28 +78,54 @@ export default function AdminPage() {
           <div className="alert alert-success" style={{ marginBottom: 20 }}>{message}</div>
         )}
 
-        {/* ── Users list ── */}
-        <div style={{
-          background: 'var(--surface)',
-          borderRadius: 16,
-          padding: 24,
-          border: '1px solid var(--border)',
-          marginBottom: 24,
-        }}>
+        {/* ── Settings row: DB + Webhooks side by side ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+          {/* Database switcher */}
+          <div style={cardStyle}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>📊 База данных</h2>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className={`btn btn-sm ${settings?.active_database === 'networkers' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => switchDatabase('networkers')}
+                disabled={saving}
+                style={{ flex: 1 }}
+              >
+                👥 Нетворкеры
+              </button>
+              <button
+                className={`btn btn-sm ${settings?.active_database === 'new' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => switchDatabase('new')}
+                disabled={saving}
+                style={{ flex: 1 }}
+              >
+                🆕 Новая
+              </button>
+            </div>
+          </div>
+
+          {/* Webhook info */}
+          <div style={cardStyle}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>🔗 Вебхуки</h2>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              <div><strong>Мэтчинг:</strong> {settings?.n8n_matching_webhook ? '✅' : '❌'}</div>
+              <div><strong>Новая:</strong> {settings?.n8n_matching_webhook_new ? '✅' : '❌'}</div>
+              <div><strong>Профили:</strong> {settings?.n8n_profile_webhook ? '✅' : '❌'}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Users list with pagination ── */}
+        <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>👥 Пользователи ({users.length})</h2>
             <div style={{ display: 'flex', gap: 12, fontSize: 13, color: 'var(--text-muted)' }}>
-              <span style={{ color: '#0088cc' }}>📱 Telegram: {tgUsers.length}</span>
+              <span style={{ color: '#0088cc' }}>📱 TG: {tgUsers.length}</span>
               <span>✉️ Email: {emailUsers.length}</span>
             </div>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontSize: 14,
-            }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
                   <th style={thStyle}>#</th>
@@ -107,7 +138,7 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u, i) => (
+                {pageUsers.map((u, i) => (
                   <tr key={u.id} style={{
                     borderBottom: '1px solid var(--border)',
                     background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
@@ -143,29 +174,9 @@ export default function AdminPage() {
                     </td>
                     <td style={tdStyle}>
                       {u.auth_method === 'telegram' ? (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '2px 8px',
-                          borderRadius: 8,
-                          background: 'rgba(0, 136, 204, 0.1)',
-                          color: '#0088cc',
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}>📱 TG</span>
+                        <span style={badgeStyle('#0088cc')}>📱 TG</span>
                       ) : (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '2px 8px',
-                          borderRadius: 8,
-                          background: 'rgba(124, 58, 237, 0.1)',
-                          color: '#7c3aed',
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}>✉️ Email</span>
+                        <span style={badgeStyle('#7c3aed')}>✉️ Email</span>
                       )}
                     </td>
                     <td style={tdStyle}>
@@ -187,64 +198,84 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
-        </div>
 
-        {/* Database switcher */}
-        <div style={{
-          background: 'var(--surface)',
-          borderRadius: 16,
-          padding: 24,
-          border: '1px solid var(--border)',
-          marginBottom: 24,
-        }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>📊 Активная база данных</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 20 }}>
-            Выберите какую базу кандидатов использовать для мэтчинга
-          </p>
+          {/* ── Pagination ── */}
+          {totalPages > 1 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              marginTop: 20,
+              paddingTop: 16,
+              borderTop: '1px solid var(--border)',
+            }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setPage(1)}
+                disabled={page === 1}
+                style={{ fontSize: 13 }}
+              >«</button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                style={{ fontSize: 13 }}
+              >‹</button>
 
-          <div style={{ display: 'flex', gap: 12 }}>
-            <button
-              className={`btn ${settings?.active_database === 'networkers' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => switchDatabase('networkers')}
-              disabled={saving}
-              style={{ flex: 1 }}
-            >
-              <span>👥</span>
-              <span>Нетворкеры</span>
-            </button>
-            <button
-              className={`btn ${settings?.active_database === 'new' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => switchDatabase('new')}
-              disabled={saving}
-              style={{ flex: 1 }}
-            >
-              <span>🆕</span>
-              <span>Новая база</span>
-            </button>
-          </div>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+                .reduce((acc: (number | string)[], p, i, arr) => {
+                  if (i > 0 && typeof arr[i - 1] === 'number' && (p as number) - (arr[i - 1] as number) > 1) {
+                    acc.push('...')
+                  }
+                  acc.push(p)
+                  return acc
+                }, [])
+                .map((p, i) =>
+                  p === '...' ? (
+                    <span key={`dots-${i}`} style={{ padding: '0 4px', color: 'var(--text-muted)' }}>…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      className={`btn btn-sm ${page === p ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setPage(p as number)}
+                      style={{ minWidth: 36, fontSize: 13 }}
+                    >{p}</button>
+                  )
+                )
+              }
 
-          <p style={{ marginTop: 12, fontSize: 13, color: 'var(--text-muted)' }}>
-            Текущая: <strong>{settings?.active_database === 'new' ? 'Новая база' : 'Нетворкеры'}</strong>
-          </p>
-        </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                style={{ fontSize: 13 }}
+              >›</button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setPage(totalPages)}
+                disabled={page === totalPages}
+                style={{ fontSize: 13 }}
+              >»</button>
 
-        {/* Webhook info */}
-        <div style={{
-          background: 'var(--surface)',
-          borderRadius: 16,
-          padding: 24,
-          border: '1px solid var(--border)',
-        }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>🔗 Вебхуки n8n</h2>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            <p><strong>Мэтчинг (Нетворкеры):</strong><br/>{settings?.n8n_matching_webhook || '—'}</p>
-            <p style={{ marginTop: 8 }}><strong>Мэтчинг (Новая):</strong><br/>{settings?.n8n_matching_webhook_new || '—'}</p>
-            <p style={{ marginTop: 8 }}><strong>Синхронизация профилей:</strong><br/>{settings?.n8n_profile_webhook || '—'}</p>
-          </div>
+              <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, users.length)} из {users.length}
+              </span>
+            </div>
+          )}
         </div>
       </main>
     </div>
   )
+}
+
+const cardStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  borderRadius: 16,
+  padding: 24,
+  border: '1px solid var(--border)',
+  marginBottom: 24,
 }
 
 const thStyle: React.CSSProperties = {
@@ -259,4 +290,18 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: '10px 12px',
   verticalAlign: 'top',
+}
+
+function badgeStyle(color: string): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '2px 8px',
+    borderRadius: 8,
+    background: `${color}18`,
+    color,
+    fontSize: 12,
+    fontWeight: 600,
+  }
 }
