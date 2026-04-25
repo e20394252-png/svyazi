@@ -106,28 +106,6 @@
   animation: fadeIn 0.3s ease;
 }
 
-.tgCodeBlock {
-  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-  border: 2px dashed #0088cc;
-  border-radius: var(--radius-lg, 12px);
-  padding: 20px;
-  text-align: center;
-}
-.tgCodeLabel {
-  font-size: 12px;
-  color: #0077b5;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
-}
-.tgCodeValue {
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: 6px;
-  color: #0088cc;
-  font-family: 'Courier New', monospace;
-}
 
 .tgPulse {
   display: flex;
@@ -137,13 +115,6 @@
   font-size: 14px;
   color: var(--text-secondary, #64748b);
   padding: 8px 0;
-}
-
-.tgHint {
-  font-size: 13px;
-  color: var(--text-muted, #94a3b8);
-  text-align: center;
-  margin: 0;
 }
 
 .tgSuccess {
