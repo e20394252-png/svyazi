@@ -48,8 +48,13 @@ def get_admin_users(
 ):
     """List all registered users for admin panel"""
     users = db.query(User).order_by(User.created_at.desc()).all()
-    return [
-        {
+    result = []
+    for u in users:
+        # Check if profile was actually filled (has occupation or bio)
+        profile_filled = bool(u.occupation or u.bio)
+        profile_saved_at = u.updated_at.isoformat() if u.updated_at else None
+
+        result.append({
             "id": u.id,
             "name": u.name,
             "email": u.email,
@@ -59,8 +64,9 @@ def get_admin_users(
             "city": u.city,
             "auth_method": "telegram" if (hasattr(u, 'telegram_id') and u.telegram_id) else "email",
             "is_admin": u.is_admin,
+            "profile_filled": profile_filled,
+            "profile_saved_at": profile_saved_at,
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "last_login_at": u.last_login_at.isoformat() if (hasattr(u, 'last_login_at') and u.last_login_at) else None,
-        }
-        for u in users
-    ]
+        })
+    return result

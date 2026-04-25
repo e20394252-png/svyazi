@@ -62,6 +62,7 @@ export default function AdminPage() {
 
   const tgUsers = users.filter(u => u.auth_method === 'telegram')
   const emailUsers = users.filter(u => u.auth_method === 'email')
+  const filledProfiles = users.filter(u => u.profile_filled).length
   const totalPages = Math.ceil(users.length / PAGE_SIZE)
   const pageUsers = users.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -118,19 +119,21 @@ export default function AdminPage() {
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>👥 Пользователи ({users.length})</h2>
-            <div style={{ display: 'flex', gap: 12, fontSize: 13, color: 'var(--text-muted)' }}>
+            <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-muted)' }}>
               <span style={{ color: '#0088cc' }}>📱 TG: {tgUsers.length}</span>
               <span>✉️ Email: {emailUsers.length}</span>
+              <span style={{ color: '#16a34a' }}>✅ Профиль: {filledProfiles}</span>
             </div>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '16%' }} />  {/* Имя */}
-                <col style={{ width: '16%' }} />  {/* Telegram */}
-                <col style={{ width: '22%' }} />  {/* Email */}
-                <col style={{ width: '8%' }} />   {/* Способ */}
+                <col style={{ width: '14%' }} />  {/* Имя */}
+                <col style={{ width: '14%' }} />  {/* Telegram */}
+                <col style={{ width: '20%' }} />  {/* Email */}
+                <col style={{ width: '7%' }} />   {/* Способ */}
+                <col style={{ width: '7%' }} />   {/* Профиль */}
                 <col style={{ width: '19%' }} />  {/* Регистрация */}
                 <col style={{ width: '19%' }} />  {/* Посл. вход */}
               </colgroup>
@@ -139,7 +142,8 @@ export default function AdminPage() {
                   <th style={thStyle}>Имя</th>
                   <th style={thStyle}>Telegram</th>
                   <th style={thStyle}>Email</th>
-                  <th style={thStyle}>Способ</th>
+                  <th style={thStyle}>Вход</th>
+                  <th style={thStyle}>Профиль</th>
                   <th style={thStyle}>Регистрация</th>
                   <th style={thStyle}>Посл. вход</th>
                 </tr>
@@ -183,6 +187,13 @@ export default function AdminPage() {
                         <span style={badgeStyle('#0088cc')}>TG</span>
                       ) : (
                         <span style={badgeStyle('#7c3aed')}>✉️</span>
+                      )}
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'center' }} title={u.profile_saved_at ? `Сохранён: ${formatDate(u.profile_saved_at)}` : 'Не заполнен'}>
+                      {u.profile_filled ? (
+                        <span style={{ color: '#16a34a', fontSize: 16 }}>✅</span>
+                      ) : (
+                        <span style={{ color: '#ef4444', fontSize: 16 }}>❌</span>
                       )}
                     </td>
                     <td style={tdStyle}>
