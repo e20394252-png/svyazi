@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.models import User
 from app.config import settings
+from app.database import get_db
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -37,3 +39,27 @@ def update_admin_settings(
         "message": f"Настройки обновлены. Активная база: {settings.ACTIVE_DATABASE}",
         "active_database": settings.ACTIVE_DATABASE,
     }
+
+
+@router.get("/users")
+def get_admin_users(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """List all registered users for admin panel"""
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [
+        {
+            "id": u.id,
+            "name": u.name,
+            "email": u.email,
+            "telegram": u.telegram,
+            "telegram_id": u.telegram_id if hasattr(u, 'telegram_id') else None,
+            "phone": u.phone,
+            "city": u.city,
+            "auth_method": "telegram" if (hasattr(u, 'telegram_id') and u.telegram_id) else "email",
+            "is_admin": u.is_admin,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        for u in users
+    ]

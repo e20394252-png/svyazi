@@ -66,4 +66,5 @@ export const api = {
   // Admin
   getAdminSettings: () => apiFetch('/api/admin/settings'),
   updateAdminSettings: (data: any) => apiFetch('/api/admin/settings', { method: 'POST', body: JSON.stringify(data) }),
+  getAdminUsers: () => apiFetch('/api/admin/users'),
 };
