@@ -125,7 +125,15 @@ export default function AdminPage() {
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '16%' }} />  {/* Имя */}
+                <col style={{ width: '16%' }} />  {/* Telegram */}
+                <col style={{ width: '22%' }} />  {/* Email */}
+                <col style={{ width: '8%' }} />   {/* Способ */}
+                <col style={{ width: '19%' }} />  {/* Регистрация */}
+                <col style={{ width: '19%' }} />  {/* Посл. вход */}
+              </colgroup>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
                   <th style={thStyle}>Имя</th>
@@ -143,7 +151,7 @@ export default function AdminPage() {
                     background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
                   }}>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{u.name || '—'}</div>
+                      <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name || '—'}</div>
                     </td>
                     <td style={tdStyle}>
                       {u.telegram ? (
@@ -151,7 +159,7 @@ export default function AdminPage() {
                           href={`https://t.me/${u.telegram.replace('@', '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ color: '#0088cc', textDecoration: 'none', fontWeight: 500, whiteSpace: 'nowrap' }}
+                          style={{ color: '#0088cc', textDecoration: 'none', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}
                         >
                           {u.telegram.startsWith('@') ? u.telegram : `@${u.telegram}`}
                         </a>
@@ -161,18 +169,20 @@ export default function AdminPage() {
                     </td>
                     <td style={tdStyle}>
                       <span style={{
-                        fontSize: 13,
+                        fontSize: 12,
                         color: u.email?.includes('@telegram.local') ? 'var(--text-muted)' : 'inherit',
-                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        display: 'block',
                       }}>
                         {u.email?.includes('@telegram.local') ? '—' : u.email}
                       </span>
                     </td>
                     <td style={tdStyle}>
                       {u.auth_method === 'telegram' ? (
-                        <span style={badgeStyle('#0088cc')}>📱 TG</span>
+                        <span style={badgeStyle('#0088cc')}>TG</span>
                       ) : (
-                        <span style={badgeStyle('#7c3aed')}>✉️ Email</span>
+                        <span style={badgeStyle('#7c3aed')}>✉️</span>
                       )}
                     </td>
                     <td style={tdStyle}>
