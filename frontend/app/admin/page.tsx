@@ -68,7 +68,7 @@ export default function AdminPage() {
   return (
     <div>
       <Navbar profile={profile} />
-      <main style={{ maxWidth: 900, margin: '0 auto', padding: '40px 20px' }}>
+      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 20px' }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>⚙️ Панель администратора</h1>
         <p style={{ color: 'var(--text-muted)', marginBottom: 32 }}>
           Управление настройками платформы
@@ -128,11 +128,10 @@ export default function AdminPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={thStyle}>#</th>
                   <th style={thStyle}>Имя</th>
                   <th style={thStyle}>Telegram</th>
                   <th style={thStyle}>Email</th>
-                  <th style={thStyle}>Вход</th>
+                  <th style={thStyle}>Способ</th>
                   <th style={thStyle}>Регистрация</th>
                   <th style={thStyle}>Посл. вход</th>
                 </tr>
@@ -144,11 +143,7 @@ export default function AdminPage() {
                     background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
                   }}>
                     <td style={tdStyle}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{u.id}</span>
-                    </td>
-                    <td style={tdStyle}>
-                      <div style={{ fontWeight: 500 }}>{u.name || '—'}</div>
-                      {u.city && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.city}</div>}
+                      <div style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{u.name || '—'}</div>
                     </td>
                     <td style={tdStyle}>
                       {u.telegram ? (
@@ -156,7 +151,7 @@ export default function AdminPage() {
                           href={`https://t.me/${u.telegram.replace('@', '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ color: '#0088cc', textDecoration: 'none', fontWeight: 500 }}
+                          style={{ color: '#0088cc', textDecoration: 'none', fontWeight: 500, whiteSpace: 'nowrap' }}
                         >
                           {u.telegram.startsWith('@') ? u.telegram : `@${u.telegram}`}
                         </a>
@@ -168,6 +163,7 @@ export default function AdminPage() {
                       <span style={{
                         fontSize: 13,
                         color: u.email?.includes('@telegram.local') ? 'var(--text-muted)' : 'inherit',
+                        whiteSpace: 'nowrap',
                       }}>
                         {u.email?.includes('@telegram.local') ? '—' : u.email}
                       </span>
@@ -180,17 +176,17 @@ export default function AdminPage() {
                       )}
                     </td>
                     <td style={tdStyle}>
-                      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                         {formatDate(u.created_at)}
                       </span>
                     </td>
                     <td style={tdStyle}>
                       {u.last_login_at ? (
-                        <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 500 }}>
+                        <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 500, whiteSpace: 'nowrap' }}>
                           {formatDate(u.last_login_at)}
                         </span>
                       ) : (
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
+                        <span style={{ color: 'var(--text-muted)' }}>—</span>
                       )}
                     </td>
                   </tr>
@@ -280,16 +276,16 @@ const cardStyle: React.CSSProperties = {
 
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
-  padding: '10px 12px',
+  padding: '8px 10px',
   fontWeight: 600,
-  fontSize: 13,
+  fontSize: 12,
   color: 'var(--text-muted)',
   whiteSpace: 'nowrap',
 }
 
 const tdStyle: React.CSSProperties = {
-  padding: '10px 12px',
-  verticalAlign: 'top',
+  padding: '8px 10px',
+  verticalAlign: 'middle',
 }
 
 function badgeStyle(color: string): React.CSSProperties {
