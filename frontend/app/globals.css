@@ -257,6 +257,7 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   border-radius: var(--radius-md);
   padding: 4px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .tab {
   display: flex;
@@ -270,12 +271,16 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   background: transparent;
   white-space: nowrap;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
 .tab:hover { color: var(--text-secondary); background: rgba(0,0,0,0.03); }
 .tab.active {
   background: var(--grad-primary);
   color: white;
   box-shadow: 0 2px 8px rgba(124,58,237,0.25);
+}
+@media (max-width: 600px) {
+  .tab { padding: 6px 10px; font-size: 12px; gap: 4px; }
 }
 
 /* ── Avatar ───────────────────────────────────────── */

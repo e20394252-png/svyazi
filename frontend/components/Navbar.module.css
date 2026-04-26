@@ -94,5 +94,11 @@
 
 @media (max-width: 600px) {
   .links span:last-child { display: none; }
-  .inner { padding: 0 12px; }
+  .link { padding: 6px 10px; }
+  .inner { padding: 0 10px; gap: 8px; height: 52px; }
+  .logo { font-size: 18px; gap: 6px; }
+  .logoIcon { width: 26px; height: 26px; font-size: 12px; }
+  .avatar { width: 30px; height: 30px; font-size: 11px; }
+  .right { gap: 6px; }
+  .right .btn { font-size: 12px; padding: 4px 8px; }
 }
