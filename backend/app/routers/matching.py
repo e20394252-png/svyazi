@@ -19,6 +19,20 @@ from collections import Counter
 
 router = APIRouter(prefix="/api/matches", tags=["matches"])
 
+# In-memory job tracker (per user)
+_matching_jobs = {}  # user_id -> {status, message, saved, log, ...}
+
+
+@router.get("/status")
+def get_matching_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Статус текущего процесса мэтчинга"""
+    job = _matching_jobs.get(current_user.id)
+    if not job:
+        return {"status": "idle", "message": "Нет активного поиска"}
+    return job
+
 
 def text_similarity(a: str, b: str) -> float:
     """Russian keyword similarity with basic root/substring matching"""
@@ -138,6 +152,12 @@ async def find_matches(
         import httpx
         import json as json_lib
         from app.database import SessionLocal
+        from datetime import datetime, timezone
+
+        job = _matching_jobs[user_id]
+        job["status"] = "sending"
+        job["message"] = "Отправляем запрос в ИИ..."
+        job["started_at"] = datetime.now(timezone.utc).isoformat()
 
         data = None
         last_error = None
@@ -146,24 +166,33 @@ async def find_matches(
         async with httpx.AsyncClient(timeout=300.0) as client:
             for attempt in range(1, 4):
                 try:
-                    print(f"DEBUG: n8n attempt {attempt}/3 for user {user_id}")
+                    job["message"] = f"Запрос в ИИ (попытка {attempt}/3)..."
+                    print(f"MATCH [{user_id}]: n8n attempt {attempt}/3")
                     response = await client.post(webhook_url, json=payload)
                     response.raise_for_status()
                     data = response.json()
-                    print(f"DEBUG: n8n responded OK for user {user_id}")
+                    print(f"MATCH [{user_id}]: n8n responded OK, status={response.status_code}")
                     break
                 except httpx.TimeoutException:
-                    print(f"DEBUG: n8n timeout for user {user_id}")
+                    job["message"] = "Таймаут ИИ (300 сек)"
+                    job["status"] = "error"
+                    print(f"MATCH [{user_id}]: n8n timeout")
                     break
                 except Exception as e:
                     last_error = str(e)
-                    print(f"DEBUG: n8n attempt {attempt} failed: {e}")
+                    print(f"MATCH [{user_id}]: attempt {attempt} failed: {e}")
                     if attempt < 3:
+                        job["message"] = f"Ошибка, повтор через {5*attempt} сек..."
                         await asyncio.sleep(5 * attempt)
 
         if data is None:
-            print(f"DEBUG: n8n failed for user {user_id}: {last_error}")
+            job["status"] = "error"
+            job["message"] = f"Ошибка n8n: {last_error or 'timeout'}"
+            print(f"MATCH [{user_id}]: FAILED: {last_error}")
             return
+
+        job["status"] = "parsing"
+        job["message"] = "Получен ответ, парсим..."
 
         # ── Парсим ответ ──────────────────────────────────────
         matches_data = []
@@ -182,7 +211,8 @@ async def find_matches(
                         return res if isinstance(res, list) else [res]
                     elif isinstance(parsed, list):
                         return parsed
-                except Exception:
+                except Exception as parse_err:
+                    print(f"MATCH [{user_id}]: Parse error in choices: {parse_err}")
                     pass
             if "matches" in item:
                 m = item["matches"]
@@ -195,13 +225,25 @@ async def find_matches(
         elif isinstance(data, dict):
             matches_data = extract_matches(data)
 
-        print(f"DEBUG: Extracted {len(matches_data)} match items for user {user_id}")
+        print(f"MATCH [{user_id}]: Extracted {len(matches_data)} raw match items")
+        job["raw_found"] = len(matches_data)
+        job["message"] = f"ИИ нашёл {len(matches_data)} кандидатов, сохраняем..."
+
+        if not matches_data:
+            job["status"] = "done"
+            job["saved"] = 0
+            job["message"] = "ИИ не нашёл подходящих мэтчей"
+            return
 
         # ── Сохраняем в базу (новая сессия!) ─────────────────
+        job["status"] = "saving"
         bg_db = SessionLocal()
         try:
             saved = 0
             skipped = 0
+            not_found = 0
+            log_details = []
+
             for item in matches_data:
                 tg_handle = item.get("telegram", "").replace("@", "").strip()
                 try:
@@ -212,6 +254,7 @@ async def find_matches(
 
                 # ── Фильтр качества: минимальный порог 30% ────
                 if score < 30:
+                    log_details.append(f"⛔ @{tg_handle} score={score} < 30 — отброшен")
                     skipped += 1
                     continue
 
@@ -219,7 +262,13 @@ async def find_matches(
                 if tg_handle:
                     target_user = bg_db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
 
-                if not target_user or target_user.id == user_id:
+                if not target_user:
+                    log_details.append(f"❌ @{tg_handle} score={score} — НЕ НАЙДЕН в БД")
+                    not_found += 1
+                    continue
+
+                if target_user.id == user_id:
+                    log_details.append(f"⚠️ @{tg_handle} — это сам юзер, пропуск")
                     continue
 
                 # ── Фильтр: пропускаем кандидатов с пустым профилем ──
@@ -230,6 +279,7 @@ async def find_matches(
                     or (target_user.occupation and target_user.occupation.strip())
                 )
                 if not has_content:
+                    log_details.append(f"⚠️ @{tg_handle} score={score} — пустой профиль, пропуск")
                     skipped += 1
                     continue
 
@@ -241,19 +291,36 @@ async def find_matches(
                     status="pending"
                 )
                 bg_db.add(new_match)
+                log_details.append(f"✅ @{tg_handle} score={score} — СОХРАНЁН (user_id={target_user.id})")
                 saved += 1
 
             bg_db.commit()
-            print(f"DEBUG: Saved {saved} matches, skipped {skipped} for user {user_id}")
+
+            job["saved"] = saved
+            job["skipped"] = skipped
+            job["not_found"] = not_found
+            job["log"] = log_details
+            job["status"] = "done"
+            job["message"] = f"Готово! Сохранено {saved} мэтчей" + (f", пропущено {skipped}" if skipped else "") + (f", не найдено {not_found}" if not_found else "")
+
+            print(f"MATCH [{user_id}]: DONE — saved={saved}, skipped={skipped}, not_found={not_found}")
+            for line in log_details:
+                print(f"MATCH [{user_id}]: {line}")
+
         except Exception as e:
             bg_db.rollback()
-            print(f"DEBUG: DB error saving matches: {e}")
+            job["status"] = "error"
+            job["message"] = f"Ошибка БД: {str(e)}"
+            print(f"MATCH [{user_id}]: DB error: {e}")
         finally:
             bg_db.close()
 
+    # Инициализируем трекер
+    _matching_jobs[user_id] = {"status": "queued", "message": "Запрос в очереди..."}
+
     # Запускаем фоновую задачу и СРАЗУ отвечаем
     asyncio.create_task(_background_matching())
-    return {"message": "Поиск запущен! Мэтчи появятся в течение 1-2 минут. Обновите страницу."}
+    return {"message": "Поиск запущен! Следите за статусом на странице."}
 
 
 @router.get("/top")

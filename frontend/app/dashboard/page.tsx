@@ -30,6 +30,8 @@ export default function DashboardPage() {
   const [finding, setFinding] = useState(false)
   const [message, setMessage] = useState('')
   const [profile, setProfile] = useState<any>(null)
+  const [matchStatus, setMatchStatus] = useState<any>(null)
+  const [showLog, setShowLog] = useState(false)
 
   const loadMatches = useCallback(async () => {
     setLoading(true)
@@ -67,15 +69,36 @@ export default function DashboardPage() {
     }
     setFinding(true)
     setMessage('')
+    setMatchStatus(null)
+    setShowLog(false)
     try {
       const result = await api.findMatches()
       setMessage(result.message)
-      await loadMatches()
+      // Start polling for status
+      pollStatus()
     } catch (e: any) {
       setMessage(e.message)
-    } finally {
       setFinding(false)
     }
+  }
+
+  function pollStatus() {
+    const interval = setInterval(async () => {
+      try {
+        const status = await api.getMatchingStatus()
+        setMatchStatus(status)
+        if (status.status === 'done' || status.status === 'error' || status.status === 'idle') {
+          clearInterval(interval)
+          setFinding(false)
+          if (status.status === 'done') {
+            await loadMatches()
+          }
+        }
+      } catch {
+        clearInterval(interval)
+        setFinding(false)
+      }
+    }, 2000)
   }
 
   async function handleAccept(matchId: number) {
@@ -130,6 +153,62 @@ export default function DashboardPage() {
         {message && (
           <div className={`alert ${message.includes('Найдено') || message.includes('отправлен') ? 'alert-success' : 'alert-info'}`}>
             {message}
+          </div>
+        )}
+
+        {/* Matching Status Tracker */}
+        {matchStatus && matchStatus.status !== 'idle' && (
+          <div style={{
+            background: matchStatus.status === 'error' ? 'rgba(239,68,68,0.06)' : matchStatus.status === 'done' ? 'rgba(5,150,105,0.06)' : 'rgba(124,58,237,0.06)',
+            border: `1px solid ${matchStatus.status === 'error' ? 'rgba(239,68,68,0.2)' : matchStatus.status === 'done' ? 'rgba(5,150,105,0.2)' : 'rgba(124,58,237,0.2)'}`,
+            borderRadius: 'var(--radius-md)',
+            padding: '16px',
+            marginBottom: '20px',
+            fontSize: '14px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: matchStatus.log ? '10px' : '0' }}>
+              {matchStatus.status !== 'done' && matchStatus.status !== 'error' && (
+                <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+              )}
+              <span style={{ fontWeight: 600, color: matchStatus.status === 'error' ? '#dc2626' : matchStatus.status === 'done' ? '#059669' : '#7c3aed' }}>
+                {matchStatus.status === 'done' ? '✅' : matchStatus.status === 'error' ? '❌' : '🔄'}
+                {' '}{matchStatus.message}
+              </span>
+            </div>
+
+            {matchStatus.status === 'done' && matchStatus.saved !== undefined && (
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: matchStatus.log ? '8px' : '0' }}>
+                📊 ИИ нашёл: {matchStatus.raw_found || 0} | Сохранено: {matchStatus.saved || 0} | Пропущено: {matchStatus.skipped || 0} | Не найдено в БД: {matchStatus.not_found || 0}
+              </div>
+            )}
+
+            {matchStatus.log && matchStatus.log.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setShowLog(!showLog)}
+                  style={{ background: 'none', color: 'var(--accent-purple)', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                >
+                  {showLog ? '▼ Скрыть детали' : '▶ Показать детали'}
+                </button>
+                {showLog && (
+                  <div style={{
+                    marginTop: '8px',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    background: 'rgba(0,0,0,0.03)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    lineHeight: 1.8,
+                  }}>
+                    {matchStatus.log.map((line: string, i: number) => (
+                      <div key={i}>{line}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

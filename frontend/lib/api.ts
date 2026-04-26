@@ -56,6 +56,7 @@ export const api = {
   acceptMatch: (id: number) => apiFetch(`/api/matches/${id}/accept`, { method: 'POST' }),
   dismissMatch: (id: number) => apiFetch(`/api/matches/${id}/dismiss`, { method: 'POST' }),
   getStats: () => apiFetch('/api/matches/stats'),
+  getMatchingStatus: () => apiFetch('/api/matches/status'),
 
   // Chat
   getMessages: (userId: number) => apiFetch(`/api/chat/${userId}`),
