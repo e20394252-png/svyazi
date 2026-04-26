@@ -35,11 +35,20 @@ export default function LoginPage() {
     setTgError('')
     setError('')
 
+    // Open window SYNCHRONOUSLY before await — iOS Safari blocks popups after async calls
+    const botWindow = window.open('about:blank', '_blank')
+
     try {
       const data = await api.telegramInit()
 
-      // Immediately open bot in new tab
-      window.open(data.bot_url, '_blank')
+      // Redirect the already-opened window to bot URL
+      if (botWindow && !botWindow.closed) {
+        botWindow.location.href = data.bot_url
+      } else {
+        // Fallback: popup was blocked, navigate current tab
+        window.location.href = data.bot_url
+        return
+      }
 
       // Start polling
       if (pollRef.current) clearInterval(pollRef.current)
@@ -63,6 +72,7 @@ export default function LoginPage() {
         }
       }, 2000)
     } catch (e: any) {
+      if (botWindow && !botWindow.closed) botWindow.close()
       setTgStatus('error')
       setTgError(e.message || 'Ошибка инициализации')
     }
