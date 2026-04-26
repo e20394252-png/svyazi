@@ -42,6 +42,21 @@ def on_startup():
     finally:
         db.close()
 
+    # Auto-set Telegram webhook on startup (survives redeploys)
+    if settings.TELEGRAM_BOT_TOKEN and settings.BACKEND_URL:
+        import threading
+        def _set_webhook():
+            import httpx
+            webhook_url = f"{settings.BACKEND_URL}/api/auth/telegram/webhook"
+            api_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
+            try:
+                with httpx.Client(timeout=15.0) as client:
+                    resp = client.post(api_url, json={"url": webhook_url})
+                    print(f"TELEGRAM WEBHOOK: {resp.json()}")
+            except Exception as e:
+                print(f"TELEGRAM WEBHOOK ERROR: {e}")
+        threading.Thread(target=_set_webhook, daemon=True).start()
+
 
 @app.get("/health")
 def health():

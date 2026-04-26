@@ -217,3 +217,26 @@ async def _send_telegram_message(chat_id: int, text: str):
             print(f"TG SEND: status={resp.status_code}")
     except Exception as e:
         print(f"TG SEND: Error sending message: {e}")
+
+
+@router.get("/setup-webhook")
+async def setup_webhook():
+    """Manually (re)set the Telegram webhook — useful after redeploys"""
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return {"error": "TELEGRAM_BOT_TOKEN not set"}
+
+    import httpx
+    webhook_url = f"{settings.BACKEND_URL}/api/auth/telegram/webhook"
+    api_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(api_url, json={"url": webhook_url})
+        result = resp.json()
+
+    # Also check current info
+    info_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        info_resp = await client.get(info_url)
+        info = info_resp.json()
+
+    return {"set_result": result, "webhook_info": info}
