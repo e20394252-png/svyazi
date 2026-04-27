@@ -34,6 +34,95 @@ def get_matching_status(
     return job
 
 
+async def _send_tg(chat_id: int, text: str):
+    """Send a Telegram message (reusable helper)"""
+    from app.config import settings
+    if not settings.TELEGRAM_BOT_TOKEN:
+        print(f"TG NOTIFY: No bot token, skip chat_id={chat_id}")
+        return
+    import httpx
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+            })
+            print(f"TG NOTIFY: chat_id={chat_id} status={resp.status_code}")
+    except Exception as e:
+        print(f"TG NOTIFY: Error chat_id={chat_id}: {e}")
+
+
+async def _notify_matching_results(db, user_id: int, saved: int, matches_data: list, log_details: list):
+    """Send Telegram notifications after matching completes"""
+    from app.config import settings
+    SITE_URL = "https://frontend-svyazi-production.up.railway.app"
+
+    # Get the user who initiated the search
+    searcher = db.query(User).filter(User.id == user_id).first()
+    if not searcher:
+        return
+
+    # ── 1. Notify the searcher ────────────────────────────
+    if searcher.telegram_id and saved > 0:
+        # Build top matches summary (up to 5)
+        top_lines = []
+        for line in log_details:
+            if line.startswith("✅"):
+                top_lines.append(line)
+            if len(top_lines) >= 5:
+                break
+
+        msg = f"🎯 <b>Мэтчинг завершён!</b>\n\n"
+        msg += f"Найдено <b>{saved}</b> совпадений:\n\n"
+        for line in top_lines:
+            # Extract handle and score from "✅ @handle score=85 — СОХРАНЁН"
+            msg += f"{line.split('—')[0].strip()}\n"
+        if saved > 5:
+            msg += f"\n...и ещё {saved - 5}\n"
+        msg += f"\n👉 <a href=\"{SITE_URL}/dashboard\">Открыть на сайте</a>"
+
+        await _send_tg(searcher.telegram_id, msg)
+
+    elif searcher.telegram_id and saved == 0:
+        msg = "😔 <b>Мэтчинг завершён</b>\n\n"
+        msg += "К сожалению, подходящих совпадений не найдено.\n"
+        msg += "Попробуйте дополнить профиль — чем больше информации, тем лучше работает ИИ.\n\n"
+        msg += f"👉 <a href=\"{SITE_URL}/profile\">Редактировать профиль</a>"
+        await _send_tg(searcher.telegram_id, msg)
+
+    # ── 2. Notify matched users ───────────────────────────
+    searcher_name = searcher.name or "Кто-то"
+    notified = set()
+    for item in matches_data:
+        tg_handle = item.get("telegram", "").replace("@", "").strip()
+        try:
+            score = float(item.get("score", 0))
+        except (ValueError, TypeError):
+            score = 0
+        if score < 30 or not tg_handle:
+            continue
+
+        target = db.query(User).filter(User.telegram.ilike(f"%{tg_handle}%")).first()
+        if not target or not target.telegram_id or target.id == user_id:
+            continue
+        if target.id in notified:
+            continue
+        notified.add(target.id)
+
+        msg = f"👋 <b>Новый запрос на знакомство!</b>\n\n"
+        msg += f"<b>{searcher_name}</b> хочет с вами познакомиться"
+        if searcher.occupation:
+            msg += f" ({searcher.occupation})"
+        msg += f".\n\nСовпадение: <b>{int(score)}%</b>\n\n"
+        msg += f"👉 <a href=\"{SITE_URL}/dashboard\">Посмотреть на сайте</a>"
+
+        await _send_tg(target.telegram_id, msg)
+
+    print(f"TG NOTIFY [{user_id}]: Notified searcher + {len(notified)} matched users")
+
+
 def text_similarity(a: str, b: str) -> float:
     """Russian keyword similarity with basic root/substring matching"""
     def get_roots(text: str) -> set:
@@ -306,6 +395,9 @@ async def find_matches(
             print(f"MATCH [{user_id}]: DONE — saved={saved}, skipped={skipped}, not_found={not_found}")
             for line in log_details:
                 print(f"MATCH [{user_id}]: {line}")
+
+            # ── Telegram уведомления ──────────────────────────
+            await _notify_matching_results(bg_db, user_id, saved, matches_data, log_details)
 
         except Exception as e:
             bg_db.rollback()
